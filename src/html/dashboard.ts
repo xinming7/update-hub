@@ -296,9 +296,10 @@ async function loadData() {
   const tlEl = document.getElementById('timeline');
   try {
     const [overviewRes, trendsRes] = await Promise.all([
-      fetch('/api/public/overview'),
-      fetch('/api/public/trends')
+      apiFetch('/api/public/overview'),
+      apiFetch('/api/public/trends')
     ]);
+    if (overviewRes.status === 401) { askKey('此仪表盘受密码保护，请输入访问密码'); return; }
     if (!overviewRes.ok) throw new Error('HTTP ' + overviewRes.status);
     const data = await overviewRes.json();
     renderStats(data);
@@ -340,6 +341,44 @@ function timeAgo(dateStr) {
 
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+/* 仅允许 http/https 链接，阻断 javascript:/data: 协议 */
+function safeUrl(u) {
+  if (!u) return '';
+  try {
+    const x = new URL(String(u), location.origin);
+    return (x.protocol === 'http:' || x.protocol === 'https:') ? x.href : '';
+  } catch (e) { return ''; }
+}
+
+/* 访问密码：优先取 URL ?key=，否则用 sessionStorage */
+function getKey() {
+  const q = new URLSearchParams(location.search).get('key');
+  if (q) { try { sessionStorage.setItem('uh-key', q); } catch (e) {} return q; }
+  try { return sessionStorage.getItem('uh-key') || ''; } catch (e) { return ''; }
+}
+function apiFetch(path) {
+  const key = getKey();
+  const url = key ? path + (path.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key) : path;
+  return fetch(url);
+}
+function submitKey(e) {
+  e.preventDefault();
+  const input = document.getElementById('key-input');
+  const v = input ? input.value.trim() : '';
+  if (v) { try { sessionStorage.setItem('uh-key', v); } catch (err) {} loadData(); }
+  return false;
+}
+function askKey(message) {
+  const html = '<div class="empty"><div class="icon">🔒</div><div>' + escapeHtml(message || '此仪表盘受密码保护') + '</div>' +
+    '<form onsubmit="return submitKey(event)" style="margin-top:12px">' +
+    '<input id="key-input" type="password" placeholder="访问密码" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text)"> ' +
+    '<button class="retry-btn" type="submit" style="margin-left:8px">进入</button></form></div>';
+  document.getElementById('projects').innerHTML = html;
+  document.getElementById('timeline').innerHTML = html;
+  const input = document.getElementById('key-input');
+  if (input) input.focus();
+}
+
 function healthColor(score) {
   if (score >= 80) return 'var(--green)';
   if (score >= 50) return 'var(--orange)';
@@ -356,10 +395,10 @@ function renderProjects(projects) {
     const score = p.health_score != null ? Math.round(p.health_score) : '-';
     return \`
     <div class="project-item">
-      <div class="project-icon">\${p.icon || '📡'}</div>
+      <div class="project-icon">\${escapeHtml(p.icon || '📡')}</div>
       <div class="project-info">
         <div class="project-name">\${escapeHtml(p.label || p.name)}</div>
-        <div class="project-type">\${escapeHtml(p.name)} · \${p.type}</div>
+        <div class="project-type">\${escapeHtml(p.name)} · \${escapeHtml(p.type)}</div>
         <div class="health-bar"><div class="health-fill" style="width:\${score}%;background:\${healthColor(score)}"></div></div>
       </div>
       <div class="project-meta">
@@ -386,14 +425,15 @@ function renderTimeline() {
 
   const visible = filtered.slice(0, displayLimit);
   tlEl.innerHTML = visible.map(u => {
-    const linkHtml = u.diff_url ? '<a class="tl-link" href="' + escapeHtml(u.diff_url) + '" target="_blank" rel="noopener">🔗 查看</a>' : '';
+    const safeLink = safeUrl(u.diff_url);
+    const linkHtml = safeLink ? '<a class="tl-link" href="' + escapeHtml(safeLink) + '" target="_blank" rel="noopener">🔗 查看</a>' : '';
     return \`
     <div class="tl-item">
       <div class="tl-dot \${u.status}"></div>
       <div class="tl-body">
         <div class="tl-title">\${escapeHtml(u.title || u.version || '(无标题)')} \${linkHtml}</div>
         <div class="tl-sub">
-          <span class="proj-tag">\${u.project_icon || '📡'} \${escapeHtml(u.project_label || u.project_name)}</span>
+          <span class="proj-tag">\${escapeHtml(u.project_icon || '📡')} \${escapeHtml(u.project_label || u.project_name)}</span>
           <span class="status-badge \${u.status}">\${u.status}</span>
           \${u.version ? '<span>' + escapeHtml(u.version.startsWith('v') ? u.version : 'v' + u.version) + '</span>' : ''}
         </div>
@@ -466,7 +506,7 @@ function renderTrends(daily) {
 }
 
 loadData();
-setInterval(loadData, 60000);
+setInterval(function () { if (!document.hidden) loadData(); }, 60000);
 </script>
 </body>
 </html>`;

@@ -2,6 +2,10 @@ export interface Env {
   DB: D1Database;
   API_TOKEN?: string;
   DASHBOARD_PASSWORD?: string;
+  /** 逗号分隔的额外允许跨域来源（默认只允许同源） */
+  CORS_ORIGIN?: string;
+  /** 邮件里生成退订链接用的对外地址，如 https://update-hub.example.workers.dev */
+  PUBLIC_URL?: string;
   SMTP_HOST?: string;
   SMTP_PORT?: string;
   SMTP_USER?: string;
@@ -36,7 +40,9 @@ export interface Update {
 
 export interface ApiToken {
   id: number;
-  token: string;
+  /** 仅存哈希，接口不返回 */
+  token_hash: string | null;
+  legacy_token: string | null;
   label: string;
   scopes: string;
   enabled: number;
@@ -58,6 +64,7 @@ export interface Subscription {
   email: string;
   project_id: number | null;
   events: string;
+  unsubscribe_token: string;
   enabled: number;
   created_at: string;
 }

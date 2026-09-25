@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { parseDbTime } from '../auth';
 
 /**
  * 计算项目健康度评分（0~100）
@@ -16,13 +17,13 @@ export async function calculateHealthScore(env: Env, projectId: number): Promise
        SUM(CASE WHEN status = 'warning' THEN 1 ELSE 0 END) as warnings,
        MAX(created_at) as last_update
      FROM updates WHERE project_id = ? AND created_at >= datetime('now', '-30 days')`
-  ).bind(projectId).first<{ total: number; errors: number; warnings: number; last_update: string }>();
+  ).bind(projectId).first<{ total: number; errors: number; warnings: number; last_update: string | null }>();
 
   // 无数据时根据最后更新时间衰减
   if (!stats || stats.total === 0) {
     const proj = await env.DB.prepare('SELECT updated_at FROM projects WHERE id = ?').bind(projectId).first<{ updated_at: string }>();
     if (!proj) return 50.0;
-    const hoursSinceUpdate = (Date.now() - new Date(proj.updated_at + 'Z').getTime()) / 3600000;
+    const hoursSinceUpdate = (Date.now() - parseDbTime(proj.updated_at)) / 3600000;
     // 24小时内=90，7天=60，30天=30，更久=10
     if (hoursSinceUpdate < 24) return 90.0;
     if (hoursSinceUpdate < 168) return 60.0;
@@ -40,7 +41,7 @@ export async function calculateHealthScore(env: Env, projectId: number): Promise
 
   // 3. 活跃度得分（30%）：最近更新距今越近分越高
   const hoursSinceUpdate = stats.last_update
-    ? (Date.now() - new Date(stats.last_update + 'Z').getTime()) / 3600000
+    ? (Date.now() - parseDbTime(stats.last_update)) / 3600000
     : 720;
   const activeScore = Math.max(0, 100 - hoursSinceUpdate * 0.5);
 
@@ -56,9 +57,11 @@ export async function refreshAllHealthScores(env: Env) {
   }
 }
 
-/** 清理 30 天前的 API 使用日志 */
-export async function cleanupOldLogs(env: Env) {
-  await env.DB.prepare(
-    "DELETE FROM api_usage_logs WHERE created_at < datetime('now', '-30 days')"
-  ).run();
+/** 清理过期数据：30 天前的使用日志、7 天前的去重键 */
+export async function cleanupOldData(env: Env) {
+  await env.DB.prepare("DELETE FROM api_usage_logs WHERE created_at < datetime('now', '-30 days')").run();
+  await env.DB.prepare("UPDATE updates SET dedup_key = '' WHERE dedup_key != '' AND created_at < datetime('now', '-7 days')").run();
 }
+
+/** 兼容旧名 */
+export const cleanupOldLogs = cleanupOldData;

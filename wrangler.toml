@@ -3,9 +3,18 @@ main = "src/index.ts"
 compatibility_date = "2025-04-01"
 
 [vars]
-# 部署后在 Cloudflare Dashboard 或用 wrangler secret 设置真实 token
-# API_TOKEN = "your-secret-token"
+# 部署后用 `wrangler secret put API_TOKEN` / `wrangler secret put DASHBOARD_PASSWORD`
+# 设置真实凭据，不要写进本文件（更不要提交到公开仓库）。
+#
+# 可选变量：
+# CORS_ORIGIN = "https://your-dashboard.example.com"      # 额外允许的跨域来源（默认只允许同源）
+# PUBLIC_URL  = "https://update-hub.example.workers.dev"  # 邮件退订链接用的对外地址
 
+# 定时任务：每天 03:00 (UTC) 刷新健康度、清理过期日志与去重键
+[triggers]
+crons = ["0 3 * * *"]
+
+# 注意：真实 database_id 请放在私有部署配置里，公开仓库建议用占位符
 [[d1_databases]]
 binding = "DB"
 database_name = "update-hub-db"
