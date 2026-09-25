@@ -1,0 +1,22 @@
+{
+  "name": "update-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "基于 Cloudflare 的通用更新同步平台",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute update-hub-db --local --file=schema.sql",
+    "db:init:remote": "wrangler d1 execute update-hub-db --remote --file=schema.sql",
+    "db:seed": "wrangler d1 execute update-hub-db --local --file=seed.sql",
+    "db:seed:remote": "wrangler d1 execute update-hub-db --remote --file=seed.sql"
+  },
+  "dependencies": {
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260903.1",
+    "wrangler": "^4.14.0",
+    "typescript": "^5.8.0"
+  }
+}

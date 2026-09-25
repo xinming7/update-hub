@@ -1,0 +1,12 @@
+name = "update-hub"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[vars]
+# 部署后在 Cloudflare Dashboard 或用 wrangler secret 设置真实 token
+# API_TOKEN = "your-secret-token"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "update-hub-db"
+database_id = "8a2fcdb3-d4eb-4a27-9404-35d1d981fb25"
