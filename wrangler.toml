@@ -14,8 +14,8 @@ compatibility_date = "2025-04-01"
 [triggers]
 crons = ["0 3 * * *"]
 
-# 注意：真实 database_id 请放在私有部署配置里，公开仓库建议用占位符
+# 注意：真实 database_id 请放在 .dev.vars 或私有部署配置里，公开仓库用占位符
 [[d1_databases]]
 binding = "DB"
 database_name = "update-hub-db"
-database_id = "8a2fcdb3-d4eb-4a27-9404-35d1d981fb25"
+database_id = "<YOUR_DATABASE_ID>"  # 部署时替换为真实 ID
