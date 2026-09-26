@@ -167,9 +167,9 @@ export async function authAny(c: AppContext): Promise<Response | null> {
   const presented = bearer || key;
   const dashPwd = c.env.DASHBOARD_PASSWORD;
 
-  // 1. 仪表盘密码（只给读权限）
+  // 1. 仪表盘密码（授予读写权限）
   if (presented && dashPwd && await timingSafeEqualStr(presented, dashPwd)) {
-    c.set('tokenScopes', ['read']);
+    c.set('tokenScopes', ['read', 'write']);
     return null;
   }
   // 2. 主 Token / 数据库 Token
