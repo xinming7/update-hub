@@ -406,8 +406,23 @@ app.get('/api/projects/:name/updates', authRead, async (c) => {
 
 // 批量删除更新记录（支持仪表盘密码和 API Token）
 app.post('/api/updates/delete', async (c) => {
-  const denied = await authAny(c);
-  if (denied) return denied;
+  // 内联认证：同时支持仪表盘密码和 API Token
+  const authHeader = c.req.header('Authorization');
+  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const queryKey = c.req.query('key') || c.req.query('token') || '';
+  const presented = bearer || queryKey;
+  if (!presented) {
+    return c.json({ error: '缺少凭证，请提供 Authorization: Bearer <token>' }, 401);
+  }
+  // 检查仪表盘密码
+  const dashPwd = c.env.DASHBOARD_PASSWORD;
+  if (dashPwd && presented === dashPwd) {
+    c.set('tokenScopes', ['read', 'write']);
+  } else {
+    // 走 API Token 认证
+    const denied = await authAny(c);
+    if (denied) return denied;
+  }
   const bad = requireWrite(c);
   if (bad) return bad;
   const { data: body, error } = await safeJson<{ ids: number[] }>(c);
