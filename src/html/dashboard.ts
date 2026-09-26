@@ -107,10 +107,11 @@ a:hover { text-decoration: underline; }
 .health-fill { height: 100%; border-radius: 2px; transition: width .3s; }
 .tl-item {
   display: flex; padding: 12px 20px; border-bottom: 1px solid var(--border);
-  transition: background .15s; gap: 12px;
+  transition: background .15s; gap: 12px; align-items: flex-start;
 }
 .tl-item:last-child { border-bottom: none; }
 .tl-item:hover { background: var(--bg-card-hover); }
+.tl-check { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; margin-top: 5px; }
 .tl-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; flex-shrink: 0; background: var(--text-dim); }
 .tl-dot.ok { background: var(--green); }
 .tl-dot.changed { background: var(--blue); }
@@ -160,6 +161,20 @@ a:hover { text-decoration: underline; }
   padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all .15s;
 }
 .filter-btn:hover, .filter-btn.active { border-color: var(--accent); color: var(--accent-light); background: var(--link-bg); }
+.del-bar {
+  display: none; align-items: center; gap: 12px; padding: 10px 20px;
+  border-bottom: 1px solid var(--border); background: rgba(225,112,85,.06);
+}
+.del-bar.show { display: flex; }
+.del-bar .del-info { font-size: 13px; color: var(--text-dim); flex: 1; }
+.del-bar .del-count { color: var(--accent-light); font-weight: 600; }
+.del-btn {
+  padding: 5px 16px; border-radius: 8px; border: 1px solid var(--red);
+  background: rgba(225,112,85,.1); color: var(--red); font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.del-btn:hover { background: var(--red); color: #fff; }
+.del-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .load-more {
   display: block; width: 100%; padding: 14px; background: none; border: none;
   border-top: 1px solid var(--border); color: var(--accent-light); font-size: 13px;
@@ -226,6 +241,10 @@ a:hover { text-decoration: underline; }
       <button class="filter-btn" onclick="setFilter('error')">🔴 异常</button>
       <button class="filter-btn" onclick="setFilter('warning')">🟡 警告</button>
     </div>
+    <div class="del-bar" id="del-bar">
+      <span class="del-info">已选 <span class="del-count" id="del-count">0</span> 条</span>
+      <button class="del-btn" id="del-btn" onclick="deleteSelected()">🗑️ 删除选中</button>
+    </div>
     <div class="section-body" id="timeline-wrap">
       <div class="timeline" id="timeline">
         <div class="loading"><div class="spinner"></div>加载中...</div>
@@ -281,6 +300,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 let allUpdates = [];
 let displayLimit = 50;
 let currentFilter = 'all';
+let selectedIds = new Set();
 
 function setFilter(f) {
   currentFilter = f;
@@ -410,6 +430,61 @@ function renderProjects(projects) {
   }).join('');
 }
 
+/* ── 选择与删除 ── */
+function toggleSelect(id, checked) {
+  if (checked) selectedIds.add(id); else selectedIds.delete(id);
+  updateDelBar();
+}
+function toggleSelectAll(checked) {
+  const filtered = currentFilter === 'all' ? allUpdates : allUpdates.filter(u => u.status === currentFilter);
+  const visible = filtered.slice(0, displayLimit);
+  if (checked) visible.forEach(u => selectedIds.add(u.id));
+  else visible.forEach(u => selectedIds.delete(u.id));
+  renderTimeline();
+  updateDelBar();
+}
+function updateDelBar() {
+  const bar = document.getElementById('del-bar');
+  const cnt = document.getElementById('del-count');
+  const btn = document.getElementById('del-btn');
+  if (selectedIds.size > 0) {
+    bar.classList.add('show');
+    cnt.textContent = selectedIds.size;
+    btn.disabled = false;
+  } else {
+    bar.classList.remove('show');
+  }
+}
+async function deleteSelected() {
+  if (!selectedIds.size) return;
+  if (!confirm('确认删除选中的 ' + selectedIds.size + ' 条记录？此操作不可撤销。')) return;
+  const btn = document.getElementById('del-btn');
+  btn.disabled = true;
+  btn.textContent = '删除中...';
+  try {
+    const key = getKey();
+    const url = key ? '/api/updates/delete?key=' + encodeURIComponent(key) : '/api/updates/delete';
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: Array.from(selectedIds) })
+    });
+    const result = await r.json();
+    if (r.ok) {
+      selectedIds.clear();
+      updateDelBar();
+      loadData();
+    } else {
+      alert('删除失败: ' + (result.error || '未知错误'));
+    }
+  } catch (e) {
+    alert('删除失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🗑️ 删除选中';
+  }
+}
+
 function renderTimeline() {
   const filtered = currentFilter === 'all' ? allUpdates : allUpdates.filter(u => u.status === currentFilter);
   document.getElementById('upd-count').textContent = filtered.length;
@@ -420,15 +495,20 @@ function renderTimeline() {
     tlEl.innerHTML = '<div class="empty"><div class="icon">📭</div>暂无更新记录</div>';
     const oldBtn = wrapEl.querySelector('.load-more');
     if (oldBtn) oldBtn.remove();
+    updateDelBar();
     return;
   }
 
   const visible = filtered.slice(0, displayLimit);
-  tlEl.innerHTML = visible.map(u => {
+  const allChecked = visible.every(u => selectedIds.has(u.id));
+  tlEl.innerHTML = '<div class="tl-item" style="padding:8px 20px;border-bottom:1px solid var(--border)"><input type="checkbox" class="tl-check" ' + (allChecked ? 'checked' : '') + ' onchange="toggleSelectAll(this.checked)"><span style="font-size:12px;color:var(--text-dim)">全选当前页</span></div>' +
+  visible.map(u => {
     const safeLink = safeUrl(u.diff_url);
     const linkHtml = safeLink ? '<a class="tl-link" href="' + escapeHtml(safeLink) + '" target="_blank" rel="noopener">🔗 查看</a>' : '';
+    const checked = selectedIds.has(u.id) ? 'checked' : '';
     return \`
     <div class="tl-item">
+      <input type="checkbox" class="tl-check" value="\${u.id}" \${checked} onchange="toggleSelect(\${u.id}, this.checked)">
       <div class="tl-dot \${u.status}"></div>
       <div class="tl-body">
         <div class="tl-title">\${escapeHtml(u.title || u.version || '(无标题)')} \${linkHtml}</div>
@@ -442,6 +522,8 @@ function renderTimeline() {
       <div class="tl-time">\${timeAgo(u.created_at)}</div>
     </div>\`;
   }).join('');
+
+  updateDelBar();
 
   const oldBtn = wrapEl.querySelector('.load-more');
   if (oldBtn) oldBtn.remove();
