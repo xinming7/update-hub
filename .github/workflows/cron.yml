@@ -1,0 +1,29 @@
+name: Cron Trigger
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # UTC 03:00 = 北京时间 11:00 — 健康度刷新 + 日志清理
+    - cron: '0 12 * * *'  # UTC 12:00 = 北京时间 20:00 — 每日汇总推送
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 触发 Update Hub cron
+        env:
+          WORKER_URL: ${{ vars.WORKER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$WORKER_URL" ]; then
+            echo "请先设置仓库变量 WORKER_URL（Worker 对外地址）"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "请先设置仓库 Secret CRON_SECRET"
+            exit 1
+          fi
+          curl -sf -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "${WORKER_URL%/}/api/cron/trigger" || exit 1
