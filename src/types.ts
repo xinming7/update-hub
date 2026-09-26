@@ -14,6 +14,8 @@ export interface Env {
   /** 可选：每日汇总 Telegram 推送（不配置则不推送） */
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
+  /** GitHub Actions cron trigger 鉴权 */
+  CRON_SECRET?: string;
 }
 
 export interface Project {

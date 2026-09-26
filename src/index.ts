@@ -597,6 +597,20 @@ app.delete('/api/tokens/:id', authAdmin, async (c) => {
   return c.json({ deleted: true });
 });
 
+// ─────────── Cron Trigger（GitHub Actions 调用）───────────
+app.post('/api/cron/trigger', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!bearer || bearer !== c.env.CRON_SECRET) {
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
+  // 执行与 scheduled handler 相同的逻辑
+  await refreshAllHealthScores(c.env);
+  await cleanupOldData(c.env);
+  await sendTelegramDigest(c.env);
+  return c.json({ ok: true, triggered_at: new Date().toISOString() });
+});
+
 // 导出 worker：fetch + 定时清理任务
 export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx),
