@@ -404,44 +404,6 @@ app.get('/api/projects/:name/updates', authRead, async (c) => {
   return c.json({ data, limit, offset, has_more: rows.results.length > limit });
 });
 
-// 批量删除更新记录（支持仪表盘密码和 API Token）
-app.post('/api/updates/delete', async (c) => {
-  // 内联认证：同时支持仪表盘密码和 API Token
-  const authHeader = c.req.header('Authorization');
-  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  const queryKey = c.req.query('key') || c.req.query('token') || '';
-  const presented = bearer || queryKey;
-  if (!presented) {
-    return c.json({ error: '缺少凭证，请提供 Authorization: Bearer <token>' }, 401);
-  }
-  // 检查仪表盘密码
-  const dashPwd = c.env.DASHBOARD_PASSWORD;
-  if (dashPwd && presented === dashPwd) {
-    c.set('tokenScopes', ['read', 'write']);
-  } else {
-    // 走 API Token 认证
-    const denied = await authAny(c);
-    if (denied) return denied;
-  }
-  const bad = requireWrite(c);
-  if (bad) return bad;
-  const { data: body, error } = await safeJson<{ ids: number[] }>(c);
-  if (error) return c.json({ error }, 400);
-  if (!body!.ids || !Array.isArray(body!.ids) || body!.ids.length === 0) {
-    return c.json({ error: 'ids 必填且不能为空' }, 400);
-  }
-  if (body!.ids.length > 200) {
-    return c.json({ error: '单次最多删除 200 条' }, 400);
-  }
-  // 只删数字 id，防止注入
-  const ids = body!.ids.filter(id => Number.isInteger(id) && id > 0);
-  if (ids.length === 0) return c.json({ error: '无有效 id' }, 400);
-
-  const placeholders = ids.map(() => '?').join(',');
-  const res = await c.env.DB.prepare(`DELETE FROM updates WHERE id IN (${placeholders})`).bind(...ids).run();
-  return c.json({ deleted: res.meta.changes });
-});
-
 // ─────────── 标签管理 ───────────
 
 app.get('/api/tags', authRead, async (c) => {
