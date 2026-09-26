@@ -57,9 +57,10 @@ export async function refreshAllHealthScores(env: Env) {
   }
 }
 
-/** 清理过期数据：30 天前的使用日志、7 天前的去重键 */
+/** 清理过期数据：30 天前的使用日志与认证失败记录、7 天前的去重键 */
 export async function cleanupOldData(env: Env) {
   await env.DB.prepare("DELETE FROM api_usage_logs WHERE created_at < datetime('now', '-30 days')").run();
+  await env.DB.prepare("DELETE FROM auth_attempts WHERE updated_at < datetime('now', '-30 days')").run();
   await env.DB.prepare("UPDATE updates SET dedup_key = '' WHERE dedup_key != '' AND created_at < datetime('now', '-7 days')").run();
 }
 

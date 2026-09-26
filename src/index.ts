@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, Project, Update } from './types';
 import {
-  authRead, authWrite, authAny, timingSafeEqualStr,
+  authRead, authWrite, authAdmin, authAny, timingSafeEqualStr,
   hasScope, requireRead, requireWrite, sha256Hex, normalizeScopes,
+  clientKey, isAuthBlocked, recordAuthFailure,
   type AppEnv, type AppContext,
 } from './auth';
 import { dashboardHTML } from './html/dashboard';
@@ -12,6 +13,7 @@ import { triggerWebhooks, validateWebhookUrl, validateWebhookEvents } from './fe
 import { logApiUsage, getUsageStats } from './features/usage';
 import { notifySubscribers, createSubscription, unsubscribeByToken, isValidEmail } from './features/subscriptions';
 import { calculateHealthScore, refreshAllHealthScores, cleanupOldData } from './features/health';
+import { buildDailyDigest, sendTelegramDigest } from './features/digest';
 
 const VALID_STATUSES = new Set(['ok', 'changed', 'error', 'warning']);
 const VALID_TYPES = new Set(['generic', 'version', 'content', 'status']);
@@ -68,15 +70,20 @@ function normalizeHttpUrl(raw: unknown): string | null {
   }
 }
 
-/** 仪表盘密码校验（仅当设置了 DASHBOARD_PASSWORD 时生效） */
+/** 仪表盘密码校验（仅当设置了 DASHBOARD_PASSWORD 时生效；口令限速 5 次 / 15 分钟） */
 async function checkDashPassword(c: AppContext): Promise<Response | null> {
   const dashPwd = c.env.DASHBOARD_PASSWORD;
   if (!dashPwd) return null;
+  const rateKey = clientKey(c, 'dashpwd');
+  if (await isAuthBlocked(c.env, rateKey, 5)) {
+    return c.json({ error: '认证失败次数过多，请稍后再试' }, 429);
+  }
   const authHeader = c.req.header('Authorization');
   const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   const key = bearer || c.req.query('key') || c.req.query('token') || '';
   if (key && await timingSafeEqualStr(key, dashPwd)) return null;
-  return c.json({ error: '需要访问密码，请通过 ?key=*** 或 Authorization header 提供' }, 401);
+  await recordAuthFailure(c.env, rateKey);
+  return c.json({ error: '需要访问密码，请通过 Authorization header 提供（也兼容 URL query）' }, 401);
 }
 
 // 全局错误处理
@@ -178,50 +185,11 @@ app.get('/api/public/trends', async (c) => {
   return c.json({ daily: daily.results });
 });
 
-// 每日汇总（北京时间 0 点起算）
+// 每日汇总（北京时间 0 点起算；逻辑在 features/digest.ts，供 HTTP 端点与定时推送复用）
 app.get('/api/daily-digest', async (c) => {
   const denied = await authAny(c);
   if (denied) return denied;
-
-  // created_at 存的是 UTC；北京时间（UTC+8）当天 0 点 = 对应 UTC 时刻 - 8 小时
-  const now = new Date();
-  const bjDateStr = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
-  const sinceMs = Date.parse(bjDateStr + 'T00:00:00Z') - 8 * 3600000;
-  const since = new Date(sinceMs).toISOString().replace('T', ' ').slice(0, 19);
-
-  const rows = await c.env.DB.prepare(
-    `SELECT u.*, p.name AS project_name, p.icon AS project_icon, p.label AS project_label
-     FROM updates u JOIN projects p ON u.project_id = p.id
-     WHERE u.created_at >= ?
-     ORDER BY u.created_at DESC`
-  ).bind(since).all<Update & { project_name: string; project_icon: string; project_label: string }>();
-
-  const updates = rows.results;
-  const grouped: Record<string, { label: string; icon: string; items: typeof updates }> = {};
-  for (const u of updates) {
-    if (!grouped[u.project_name]) {
-      grouped[u.project_name] = { label: u.project_label, icon: u.project_icon, items: [] };
-    }
-    grouped[u.project_name].items.push(u);
-  }
-
-  const changed = updates.filter(u => u.status === 'changed').length;
-  const errors = updates.filter(u => u.status === 'error' || u.status === 'warning').length;
-  const ok = updates.filter(u => u.status === 'ok').length;
-
-  return c.json({
-    date: bjDateStr,
-    since,
-    total: updates.length,
-    stats: { changed, errors, ok },
-    projects: Object.entries(grouped).map(([name, g]) => ({
-      name, label: g.label, icon: g.icon, count: g.items.length,
-      updates: g.items.map(u => ({
-        title: u.title || u.version || '(无标题)',
-        version: u.version, status: u.status, body: u.body, diff_url: u.diff_url,
-      })),
-    })),
-  });
+  return c.json(await buildDailyDigest(c.env));
 });
 
 // ─────────── 项目 ───────────
@@ -340,19 +308,20 @@ app.post('/api/projects/:name/updates', authWrite, async (c) => {
   const extraJson = JSON.stringify(body!.extra ?? {});
   if (extraJson.length > 10000) return c.json({ error: 'extra 过大（上限 10KB）' }, 400);
 
-  // 去重：相同 version+title+status 在 1 小时内不重复记录
+  // 去重：相同 version+title+status 在 1 小时内不重复记录。
+  // 单条 INSERT ... SELECT ... WHERE NOT EXISTS，避免“查后写”竞态导致双写。
   const dedupKey = `${name}:${version}:${title}:${status}`;
-  const recent = await c.env.DB.prepare(
-    `SELECT id FROM updates WHERE project_id = ? AND dedup_key = ? AND created_at >= datetime('now', '-1 hour')`
-  ).bind(project.id, dedupKey).first<{ id: number }>();
-  if (recent) {
+  const inserted = await c.env.DB.prepare(
+    `INSERT INTO updates (project_id, version, title, body, status, diff_url, extra, dedup_key)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?
+     WHERE NOT EXISTS (
+       SELECT 1 FROM updates
+       WHERE project_id = ? AND dedup_key = ? AND created_at >= datetime('now', '-1 hour')
+     )`
+  ).bind(project.id, version, title, text, status, diffUrl, extraJson, dedupKey, project.id, dedupKey).run();
+  if (!inserted.meta.changes) {
     return c.json({ recorded: true, deduplicated: true }, 200);
   }
-
-  await c.env.DB.prepare(
-    `INSERT INTO updates (project_id, version, title, body, status, diff_url, extra, dedup_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(project.id, version, title, text, status, diffUrl, extraJson, dedupKey).run();
 
   await c.env.DB.prepare(`UPDATE projects SET updated_at = datetime('now') WHERE id = ?`).bind(project.id).run();
 
@@ -504,7 +473,7 @@ app.delete('/api/webhooks/:id', authWrite, async (c) => {
 app.get('/api/subscriptions', authRead, async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT s.id, s.email, s.project_id, s.events, s.enabled, s.created_at,
-            s.unsubscribe_token, p.name AS project_name, p.label AS project_label
+            p.name AS project_name, p.label AS project_label
      FROM subscriptions s LEFT JOIN projects p ON s.project_id = p.id
      ORDER BY s.created_at DESC`
   ).all();
@@ -570,7 +539,7 @@ app.get('/api/tokens', authRead, async (c) => {
   return c.json(rows.results);
 });
 
-app.post('/api/tokens', authWrite, async (c) => {
+app.post('/api/tokens', authAdmin, async (c) => {
   const { data: body, error } = await safeJson<{ label?: string; scopes?: string[] }>(c);
   if (error) return c.json({ error }, 400);
 
@@ -596,7 +565,7 @@ app.post('/api/tokens', authWrite, async (c) => {
   }, 201);
 });
 
-app.patch('/api/tokens/:id', authWrite, async (c) => {
+app.patch('/api/tokens/:id', authAdmin, async (c) => {
   const { data: body, error } = await safeJson<{ enabled?: boolean; label?: string }>(c);
   if (error) return c.json({ error }, 400);
 
@@ -620,7 +589,7 @@ app.patch('/api/tokens/:id', authWrite, async (c) => {
   return c.json({ updated: true });
 });
 
-app.delete('/api/tokens/:id', authWrite, async (c) => {
+app.delete('/api/tokens/:id', authAdmin, async (c) => {
   const id = parseId(c.req.param('id'));
   if (id === null) return c.json({ error: 'id 无效' }, 400);
   const res = await c.env.DB.prepare('DELETE FROM api_tokens WHERE id = ?').bind(id).run();
@@ -631,10 +600,14 @@ app.delete('/api/tokens/:id', authWrite, async (c) => {
 // 导出 worker：fetch + 定时清理任务
 export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx),
-  scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext) => {
+  scheduled: (event: ScheduledController, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil((async () => {
       await refreshAllHealthScores(env);
       await cleanupOldData(env);
+      // 每日汇总推送（UTC 12:00 = 北京时间 20:00）；需配置 TELEGRAM_* 才生效
+      if (event.cron === '0 12 * * *') {
+        await sendTelegramDigest(env);
+      }
     })().catch(e => console.error('Scheduled task failed:', e)));
   },
 };

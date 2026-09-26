@@ -17,6 +17,15 @@
 └──────────────────────────┘
 ```
 
+## 安全须知（公网部署必读）
+
+- **必须设置 `DASHBOARD_PASSWORD`**：未设置时仪表盘及 `/api/public/*` 数据接口对任何人开放。
+- **上报方使用最小权限 Token**：`read` / `write` 即可；**Token 管理端点（增删改）需要 `admin` scope**，防止低权限 Token 锁门。
+- **Token / 密码优先用 `Authorization: Bearer` 传递**。URL `?key=` 仅建议给 RSS 阅读器使用——URL 会进浏览器历史、代理与访问日志，等同于凭据泄露面。
+- Webhook URL 做了内网地址拦截（含 IPv4-mapped IPv6），但**无法防御 DNS 解析到内网**（rebinding）；对高安全场景建议再加出网代理白名单。
+- 认证失败有限速：口令 5 次 / Token 10 次（15 分钟窗口），超限返回 429。
+- 每日汇总推送二选一：本项目的 scheduled 推送（配置 `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` 后生效）或 apple-update-checker 的 `daily-digest.yml` 工作流，**不要同时启用**，否则重复推送。
+
 ## 支持的检测类型
 
 | 类型 | 说明 | 示例 |

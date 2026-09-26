@@ -352,14 +352,22 @@ function safeUrl(u) {
 
 /* 访问密码：优先取 URL ?key=，否则用 sessionStorage */
 function getKey() {
-  const q = new URLSearchParams(location.search).get('key');
-  if (q) { try { sessionStorage.setItem('uh-key', q); } catch (e) {} return q; }
+  // 优先取 URL ?key=（兼容分享链接），取到后立即从地址栏抹掉，
+  // 后续请求统一走 Authorization header，避免凭据进浏览器历史 / Referer
+  const u = new URL(location.href);
+  const q = u.searchParams.get('key') || u.searchParams.get('token');
+  if (q) {
+    try { sessionStorage.setItem('uh-key', q); } catch (e) {}
+    u.searchParams.delete('key');
+    u.searchParams.delete('token');
+    history.replaceState(null, '', u.toString());
+    return q;
+  }
   try { return sessionStorage.getItem('uh-key') || ''; } catch (e) { return ''; }
 }
 function apiFetch(path) {
   const key = getKey();
-  const url = key ? path + (path.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key) : path;
-  return fetch(url);
+  return fetch(path, key ? { headers: { 'Authorization': 'Bearer ' + key } } : {});
 }
 function submitKey(e) {
   e.preventDefault();

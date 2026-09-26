@@ -11,6 +11,39 @@ export type AppContext = Context<AppEnv>;
 
 const VALID_SCOPES = new Set(['read', 'write', 'admin']);
 
+// ── 认证失败限速（防口令 / Token 爆破） ────────────────────────
+
+const RATE_WINDOW_MIN = 15;
+
+/** 客户端标识：优先 CF-Connecting-IP，其次 X-Forwarded-For 首项 */
+export function clientKey(c: AppContext, purpose: string): string {
+  const fwd = (c.req.header('x-forwarded-for') || '').split(',')[0].trim();
+  const ip = c.req.header('CF-Connecting-IP') || fwd || 'unknown';
+  return `${purpose}:${ip}`;
+}
+
+/** 窗口内失败次数是否已达上限 */
+export async function isAuthBlocked(env: Env, key: string, max = 10): Promise<boolean> {
+  const row = await env.DB.prepare(
+    'SELECT failures, updated_at FROM auth_attempts WHERE key = ?'
+  ).bind(key).first<{ failures: number; updated_at: string }>();
+  if (!row) return false;
+  if (Date.now() - parseDbTime(row.updated_at) > RATE_WINDOW_MIN * 60_000) return false;
+  return row.failures >= max;
+}
+
+/** 记一次认证失败（窗口外自动重新计数） */
+export async function recordAuthFailure(env: Env, key: string): Promise<void> {
+  await env.DB.prepare(
+    `INSERT INTO auth_attempts (key, failures, updated_at) VALUES (?, 1, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET
+       failures = CASE
+         WHEN updated_at < datetime('now', '-${RATE_WINDOW_MIN} minutes') THEN 1
+         ELSE failures + 1 END,
+       updated_at = datetime('now')`
+  ).bind(key).run();
+}
+
 /** SHA-256 → hex */
 export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -50,6 +83,11 @@ export function hasScope(c: AppContext, scope: string): boolean {
 
 export function requireRead(c: AppContext): Response | null {
   return hasScope(c, 'read') ? null : c.json({ error: '该 Token 无读取权限' }, 403);
+}
+
+/** 管理权限（Token 管理等敏感端点） */
+export function requireAdmin(c: AppContext): Response | null {
+  return hasScope(c, 'admin') ? null : c.json({ error: '该 Token 无管理权限' }, 403);
 }
 
 export function requireWrite(c: AppContext): Response | null {
@@ -105,6 +143,12 @@ function setTokenVars(c: AppContext, row: TokenRow) {
  * 通过返回 null，拒绝返回 Response
  */
 async function authenticate(c: AppContext, allowQuery: boolean): Promise<Response | null> {
+  // 限速：防止 Token 逐个枚举（窗口 15 分钟，上限 10 次）
+  const rateKey = clientKey(c, 'token');
+  if (await isAuthBlocked(c.env, rateKey)) {
+    return c.json({ error: '认证失败次数过多，请稍后再试' }, 429);
+  }
+
   const authHeader = c.req.header('Authorization');
   const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   const queryToken = allowQuery ? (c.req.query('key') || c.req.query('token') || '') : '';
@@ -134,6 +178,7 @@ async function authenticate(c: AppContext, allowQuery: boolean): Promise<Respons
     return null;
   }
 
+  await recordAuthFailure(c.env, rateKey);
   return c.json({ error: 'Token 无效' }, 401);
 }
 
@@ -142,6 +187,15 @@ export const authRead: MiddlewareHandler<AppEnv> = async (c, next) => {
   const denied = await authenticate(c, false);
   if (denied) return denied;
   const bad = requireRead(c);
+  if (bad) return bad;
+  await next();
+};
+
+/** 管理接口鉴权（需要 admin，用于 Token 管理等） */
+export const authAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const denied = await authenticate(c, false);
+  if (denied) return denied;
+  const bad = requireAdmin(c);
   if (bad) return bad;
   await next();
 };
@@ -168,10 +222,21 @@ export async function authAny(c: AppContext): Promise<Response | null> {
   const dashPwd = c.env.DASHBOARD_PASSWORD;
 
   // 1. 仪表盘密码（只给读权限）
-  if (presented && dashPwd && await timingSafeEqualStr(presented, dashPwd)) {
-    c.set('tokenScopes', ['read']);
-    return null;
+  // 1. 主 Token / 数据库 Token（先验，避免合法 Token 被误计为口令失败）
+  const denied = await authenticate(c, true);
+  if (!denied) return null;
+
+  // 2. 仪表盘密码（只给读权限；单独限速）
+  if (presented && dashPwd) {
+    const dashKey = clientKey(c, 'dashpwd');
+    if (await isAuthBlocked(c.env, dashKey, 5)) {
+      return c.json({ error: '认证失败次数过多，请稍后再试' }, 429);
+    }
+    if (await timingSafeEqualStr(presented, dashPwd)) {
+      c.set('tokenScopes', ['read']);
+      return null;
+    }
+    await recordAuthFailure(c.env, dashKey);
   }
-  // 2. 主 Token / 数据库 Token
-  return authenticate(c, true);
+  return denied;
 }

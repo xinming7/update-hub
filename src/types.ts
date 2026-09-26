@@ -11,6 +11,9 @@ export interface Env {
   SMTP_USER?: string;
   SMTP_PASS?: string;
   SMTP_FROM?: string;
+  /** 可选：每日汇总 Telegram 推送（不配置则不推送） */
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 }
 
 export interface Project {

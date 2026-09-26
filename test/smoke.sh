@@ -4,12 +4,12 @@
 #   用法：npm run test:smoke
 #   环境变量：
 #     BASE_URL  服务地址（默认 http://localhost:8787）
-#     API_TOKEN 主 Token（默认 uh_test_token，需与服务端一致）
+#     API_TOKEN 主 Token（默认 local-dev-1，需与服务端一致）
 # ============================================================
 set -u
 
 BASE_URL="${BASE_URL:-http://localhost:8787}"
-TOKEN="${API_TOKEN:-uh_test_token}"
+TOKEN="${API_TOKEN:-local-dev-1}"
 AUTH_PREFIX="$(printf 'QXV0aG9yaXphdGlvbjogQmVhcmVyIA==' | base64 -d)"
 PASS=0
 FAIL=0
@@ -87,7 +87,7 @@ expect_contains "分页字段齐全" '"has_more"'
 
 echo "== 标签 / Webhook / 订阅 / 统计（schema 完整性）=="
 req GET /api/tags 200
-req POST /api/tags 201 '{"name":"重要"}'
+req POST /api/tags 201 "{\"name\":\"重要-$$\"}"
 req GET /api/webhooks 200
 req POST /api/webhooks 201 '{"url":"https://example.com/hook","secret":"s3cret","events":["update"]}'
 req POST /api/webhooks 400 '{"url":"http://127.0.0.1:8080/hook"}'
@@ -115,10 +115,22 @@ check "成功签发子 Token" "$([ -n "$LIMITED" ] && [ -n "$READONLY" ] && echo
 
 req GET /api/projects 200 '' "${LIMITED:-none}"
 req POST /api/tokens 403 '{"label":"escalated","scopes":["admin"]}' "${LIMITED:-none}"
-req POST /api/tokens 400 '{"label":"bad-scope","scopes":["root"]}' "${LIMITED:-none}"
+req POST /api/tokens 400 '{"label":"bad-scope","scopes":["root"]}'
 req POST /api/projects 403 '{"name":"readonly-write","label":"只读 token 写入"}' "${READONLY:-none}"
 req POST /api/tokens 201 '{"label":"admin-child","scopes":["admin"]}'
 expect_contains "主 Token 可授予 admin" '"scopes":["admin"]'
+
+echo "== Token 管理需 admin（防低权限 Token 锁门）=="
+req PATCH "/api/tokens/1" 403 '{"enabled":false}' "${LIMITED:-none}"
+req DELETE /api/tokens/1 403 '' "${LIMITED:-none}"
+req POST /api/tokens 403 '{"label":"limited-child","scopes":["read"]}' "${LIMITED:-none}"
+expect_contains "低权限 Token 被拒" '管理权限'
+req GET /api/subscriptions 200
+if grep -q 'unsubscribe_token' "$BODY_FILE"; then
+  check "订阅列表不泄露退订凭据" 0
+else
+  check "订阅列表不泄露退订凭据" 1
+fi
 
 echo "== 鉴权边界 =="
 req GET /api/projects 401 '' '-'

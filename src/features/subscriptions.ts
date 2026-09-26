@@ -22,10 +22,18 @@ export async function notifySubscribers(
   const subject = `${project.icon} ${project.label}: ${update.title || update.version || '更新通知'}`;
   const base = (env.PUBLIC_URL || '').replace(/\/+$/, '');
 
-  for (const sub of rows.results) {
-    const unsubscribeUrl = base ? `${base}/api/unsubscribe?token=${encodeURIComponent(sub.unsubscribe_token)}` : '';
-    const html = formatUpdateEmail(project, update, { unsubscribeUrl });
-    await sendEmail(env, sub.email, subject, html);
+  // 分批并发发送（每批 5 封）：串行 SMTP 会超出 Worker 执行时长；
+  // 单次上限 100 封，避免极端订阅量拖垮整个 waitUntil。
+  const targets = rows.results.slice(0, 100);
+  if (rows.results.length > targets.length) {
+    console.warn(`Subscribers capped for this notification: ${targets.length}/${rows.results.length}`);
+  }
+  for (let i = 0; i < targets.length; i += 5) {
+    await Promise.allSettled(targets.slice(i, i + 5).map(async (sub) => {
+      const unsubscribeUrl = base ? `${base}/api/unsubscribe?token=${encodeURIComponent(sub.unsubscribe_token)}` : '';
+      const html = formatUpdateEmail(project, update, { unsubscribeUrl });
+      await sendEmail(env, sub.email, subject, html);
+    }));
   }
 }
 

@@ -83,6 +83,11 @@ function createSession(sock: SocketLike, timeoutMs = 15000) {
 
   return {
     greeting: () => readLine().then(() => undefined),
+    /** 解锁 reader/writer 但不关闭连接（STARTTLS 升级前必须调用） */
+    unlock: () => {
+      try { writer.releaseLock(); } catch { /* 忽略 */ }
+      try { reader.releaseLock(); } catch { /* 忽略 */ }
+    },
     ehlo: async () => {
       await writeLine('EHLO update-hub');
       return readMulti();
@@ -156,7 +161,12 @@ export async function sendEmail(env: Env, to: string, subject: string, html: str
   try {
     sock = await connect(
       { hostname: host, port },
-      { secureTransport: (port === 465 ? 'on' : 'off') as 'on' | 'off', allowHalfOpen: false }
+      {
+        // 587 等端口需要先明文协商再升级 TLS，必须声明 'starttls'，
+        // 否则 startTls() 会直接抛错；465 直接 TLS。
+        secureTransport: (port === 465 ? 'on' : 'starttls') as 'on' | 'starttls',
+        allowHalfOpen: false,
+      }
     ) as SocketLike;
     session = createSession(sock);
     await session.greeting();
@@ -168,7 +178,9 @@ export async function sendEmail(env: Env, to: string, subject: string, html: str
         throw new Error('服务器不支持 STARTTLS，拒绝以明文发送认证信息');
       }
       expect(await session.cmd('STARTTLS'), '2', 'STARTTLS');
-      await session.release();
+      // startTls() 会废弃旧 socket 的 reader/writer：
+      // 必须先解锁（releaseLock），不能 close/cancel（那会直接断开连接）
+      session.unlock();
       sock = (sock.startTls ? sock.startTls() : sock) as SocketLike;
       session = createSession(sock);
       ehlo = (await session.ehlo()).join('\n');

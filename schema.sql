@@ -86,6 +86,13 @@ CREATE TABLE IF NOT EXISTS api_usage_logs (
   created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 认证失败计数（限速用：15 分钟窗口内失败超限则临时封禁）
+CREATE TABLE IF NOT EXISTS auth_attempts (
+  key        TEXT    PRIMARY KEY,             -- 如 token:1.2.3.4 / dashpwd:1.2.3.4
+  failures   INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_updates_project ON updates(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_updates_created  ON updates(created_at DESC);

@@ -34,12 +34,12 @@ jobs:
           done
           echo "dev server 启动超时"; cat wrangler.log; exit 1
         env:
-          API_TOKEN: uh_test_token
+          API_TOKEN: local-dev-1
 
       - name: 冒烟测试
         env:
           BASE_URL: http://localhost:8787
-          API_TOKEN: uh_test_token
+          API_TOKEN: local-dev-1
         run: npm run test:smoke
 
       - name: 迁移脚本校验（旧 schema → 001 迁移）

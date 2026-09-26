@@ -9,7 +9,9 @@
 -- 1. projects / updates 补列
 ALTER TABLE projects ADD COLUMN health_score REAL NOT NULL DEFAULT 0;
 ALTER TABLE updates  ADD COLUMN dedup_key   TEXT NOT NULL DEFAULT '';
-UPDATE updates SET dedup_key = project_id || ':' || version || ':' || title || ':' || status
+UPDATE updates SET dedup_key =
+    (SELECT p.name FROM projects p WHERE p.id = updates.project_id)
+    || ':' || version || ':' || title || ':' || status
   WHERE dedup_key = '';
 
 -- 2. api_tokens 改为哈希存储（重建表：旧明文挪到 legacy_token，认证时自动升级）
@@ -78,3 +80,10 @@ CREATE INDEX IF NOT EXISTS idx_usage_created    ON api_usage_logs(created_at);
 
 -- 5. （可选，确认业务正常后执行）删除历史明文 token 列
 -- ALTER TABLE api_tokens DROP COLUMN legacy_token;
+
+-- 4. 认证失败计数表（限速用）
+CREATE TABLE IF NOT EXISTS auth_attempts (
+  key        TEXT    PRIMARY KEY,
+  failures   INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
