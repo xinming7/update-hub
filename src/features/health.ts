@@ -51,17 +51,59 @@ export async function calculateHealthScore(env: Env, projectId: number): Promise
 
 export async function refreshAllHealthScores(env: Env) {
   const projects = await env.DB.prepare('SELECT id FROM projects').all<{ id: number }>();
-  for (const p of projects.results) {
-    const score = await calculateHealthScore(env, p.id);
-    await env.DB.prepare('UPDATE projects SET health_score = ? WHERE id = ?').bind(score, p.id).run();
+  // 批量读取所有项目的统计数据，减少串行 DB 查询
+  const statsResults = await env.DB.batch(
+    projects.results.map(p =>
+      env.DB.prepare(
+        `SELECT
+           COUNT(*) as total,
+           SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as errors,
+           SUM(CASE WHEN status = 'warning' THEN 1 ELSE 0 END) as warnings,
+           MAX(created_at) as last_update
+         FROM updates WHERE project_id = ? AND created_at >= datetime('now', '-30 days')`
+      ).bind(p.id)
+    )
+  );
+
+  const updateStatements: D1PreparedStatement[] = [];
+  for (let i = 0; i < projects.results.length; i++) {
+    const p = projects.results[i];
+    const stats = statsResults[i]?.results?.[0] as { total: number; errors: number; warnings: number; last_update: string | null } | undefined;
+    const score = computeScore(stats);
+    updateStatements.push(
+      env.DB.prepare('UPDATE projects SET health_score = ? WHERE id = ?').bind(score, p.id)
+    );
+  }
+  if (updateStatements.length > 0) {
+    await env.DB.batch(updateStatements);
   }
 }
 
-/** 清理过期数据：30 天前的使用日志与认证失败记录、7 天前的去重键 */
+/** 从统计数据计算健康度评分（纯计算，无 DB 调用） */
+function computeScore(stats: { total: number; errors: number; warnings: number; last_update: string | null } | undefined): number {
+  if (!stats || stats.total === 0) return 50.0;
+
+  const errorRate = ((stats.errors || 0) + (stats.warnings || 0) * 0.5) / stats.total;
+  const errorScore = Math.max(0, 100 - errorRate * 200);
+  const avgPerDay = stats.total / 30;
+  const freqScore = avgPerDay <= 5 ? 100 : Math.max(0, 100 - (avgPerDay - 5) * 10);
+  const hoursSinceUpdate = stats.last_update
+    ? (Date.now() - parseDbTime(stats.last_update)) / 3600000
+    : 720;
+  const activeScore = Math.max(0, 100 - hoursSinceUpdate * 0.5);
+
+  return Math.round((errorScore * 0.4 + freqScore * 0.3 + activeScore * 0.3) * 10) / 10;
+}
+
+/** 清理过期数据：30 天前的使用日志与认证失败记录、7 天前的去重键、孤立的 tag relations */
 export async function cleanupOldData(env: Env) {
-  await env.DB.prepare("DELETE FROM api_usage_logs WHERE created_at < datetime('now', '-30 days')").run();
-  await env.DB.prepare("DELETE FROM auth_attempts WHERE updated_at < datetime('now', '-30 days')").run();
-  await env.DB.prepare("UPDATE updates SET dedup_key = '' WHERE dedup_key != '' AND created_at < datetime('now', '-7 days')").run();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM api_usage_logs WHERE created_at < datetime('now', '-30 days')"),
+    env.DB.prepare("DELETE FROM auth_attempts WHERE updated_at < datetime('now', '-30 days')"),
+    env.DB.prepare("UPDATE updates SET dedup_key = '' WHERE dedup_key != '' AND created_at < datetime('now', '-7 days')"),
+    env.DB.prepare("DELETE FROM project_tag_relations WHERE project_id NOT IN (SELECT id FROM projects)"),
+    env.DB.prepare("DELETE FROM project_tag_relations WHERE tag_id NOT IN (SELECT id FROM project_tags)"),
+  ]);
 }
 
 /** 兼容旧名 */

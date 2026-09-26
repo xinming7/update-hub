@@ -131,11 +131,18 @@ export async function sendTelegramDigest(env: Env): Promise<void> {
     return;
   }
 
-  // Telegram 单条消息上限 4096，截断放在最后
+  // Telegram 单条消息上限 4096，按行截断保证 HTML 标签完整
   let text = formatDigestText(digest);
   const MAX_LEN = 4096;
   if (text.length > MAX_LEN) {
-    text = text.slice(0, MAX_LEN - 30) + '\n\n... (内容过长已截断)';
+    const lines = text.split('\n');
+    let truncated = '';
+    for (const line of lines) {
+      // +1 for the newline that join will add
+      if ((truncated + line + 1).length > MAX_LEN - 30) break;
+      truncated += (truncated ? '\n' : '') + line;
+    }
+    text = truncated + '\n\n... (内容过长已截断)';
   }
 
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {

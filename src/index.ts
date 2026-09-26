@@ -405,6 +405,9 @@ app.delete('/api/tags/:id', authWrite, async (c) => {
   const id = parseId(c.req.param('id'));
   if (id === null) return c.json({ error: 'id 无效' }, 400);
 
+  const existing = await c.env.DB.prepare('SELECT id FROM project_tags WHERE id = ?').bind(id).first<{ id: number }>();
+  if (!existing) return c.json({ error: '标签不存在' }, 404);
+
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM project_tag_relations WHERE tag_id = ?').bind(id),
     c.env.DB.prepare('DELETE FROM project_tags WHERE id = ?').bind(id),
@@ -464,7 +467,8 @@ app.post('/api/webhooks', authWrite, async (c) => {
 app.delete('/api/webhooks/:id', authWrite, async (c) => {
   const id = parseId(c.req.param('id'));
   if (id === null) return c.json({ error: 'id 无效' }, 400);
-  await c.env.DB.prepare('DELETE FROM webhooks WHERE id = ?').bind(id).run();
+  const res = await c.env.DB.prepare('DELETE FROM webhooks WHERE id = ?').bind(id).run();
+  if (!res.meta.changes) return c.json({ error: 'Webhook 不存在' }, 404);
   return c.json({ deleted: true });
 });
 
@@ -512,7 +516,8 @@ app.post('/api/subscriptions', authWrite, async (c) => {
 app.delete('/api/subscriptions/:id', authWrite, async (c) => {
   const id = parseId(c.req.param('id'));
   if (id === null) return c.json({ error: 'id 无效' }, 400);
-  await c.env.DB.prepare('DELETE FROM subscriptions WHERE id = ?').bind(id).run();
+  const res = await c.env.DB.prepare('DELETE FROM subscriptions WHERE id = ?').bind(id).run();
+  if (!res.meta.changes) return c.json({ error: '订阅不存在' }, 404);
   return c.json({ deleted: true });
 });
 
