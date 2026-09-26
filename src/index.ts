@@ -404,8 +404,12 @@ app.get('/api/projects/:name/updates', authRead, async (c) => {
   return c.json({ data, limit, offset, has_more: rows.results.length > limit });
 });
 
-// 批量删除更新记录
-app.post('/api/updates/delete', authWrite, async (c) => {
+// 批量删除更新记录（支持仪表盘密码和 API Token）
+app.post('/api/updates/delete', async (c) => {
+  const denied = await authAny(c);
+  if (denied) return denied;
+  const bad = requireWrite(c);
+  if (bad) return bad;
   const { data: body, error } = await safeJson<{ ids: number[] }>(c);
   if (error) return c.json({ error }, 400);
   if (!body!.ids || !Array.isArray(body!.ids) || body!.ids.length === 0) {
