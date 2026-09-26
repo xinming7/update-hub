@@ -221,7 +221,6 @@ export async function authAny(c: AppContext): Promise<Response | null> {
   const presented = bearer || key;
   const dashPwd = c.env.DASHBOARD_PASSWORD;
 
-  // 1. 仪表盘密码（只给读权限）
   // 1. 主 Token / 数据库 Token（先验，避免合法 Token 被误计为口令失败）
   const denied = await authenticate(c, true);
   if (!denied) return null;
