@@ -463,10 +463,11 @@ async function deleteSelected() {
   btn.textContent = '删除中...';
   try {
     const key = getKey();
-    const url = key ? '/api/updates/delete?key=' + encodeURIComponent(key) : '/api/updates/delete';
-    const r = await fetch(url, {
+    const headers = { 'Content-Type': 'application/json' };
+    if (key) headers['Authorization'] = 'Bearer ' + key;
+    const r = await fetch('/api/updates/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ ids: Array.from(selectedIds) })
     });
     const result = await r.json();
