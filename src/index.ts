@@ -606,7 +606,7 @@ app.delete('/api/tokens/:id', authAdmin, async (c) => {
 app.post('/api/cron/trigger', async (c) => {
   const authHeader = c.req.header('Authorization');
   const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  if (!bearer || bearer !== c.env.CRON_SECRET) {
+  if (!bearer || !(await timingSafeEqualStr(bearer, c.env.CRON_SECRET || ''))) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
   // type=daily（默认）或 type=weekly
@@ -623,17 +623,7 @@ app.post('/api/cron/trigger', async (c) => {
   return c.json({ ok: true, type, triggered_at: new Date().toISOString() });
 });
 
-// 导出 worker：fetch + 定时清理任务
+// 导出 worker：fetch handler（定时任务已改由 GitHub Actions → /api/cron/trigger 驱动）
 export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx),
-  scheduled: (event: ScheduledController, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil((async () => {
-      await refreshAllHealthScores(env);
-      await cleanupOldData(env);
-      // 每日汇总推送（UTC 12:00 = 北京时间 20:00）；需配置 TELEGRAM_* 才生效
-      if (event.cron === '0 12 * * *') {
-        await sendTelegramDigest(env);
-      }
-    })().catch(e => console.error('Scheduled task failed:', e)));
-  },
 };

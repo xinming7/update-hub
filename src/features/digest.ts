@@ -178,6 +178,8 @@ export function formatWeeklyDigestText(digest: DailyDigest): string {
       msg += `${STATUS_ICON[u.status] || '🟢'} ${escapeHtml(u.title || u.version || '(无标题)')}`;
       if (u.version) msg += ` <code>${escapeHtml(u.version)}</code>`;
       msg += '\n';
+      const link = u.diff_url ? safeLink(u.diff_url) : '';
+      if (link) msg += `    <a href="${escapeHtml(link)}">查看详情</a>\n`;
     }
     if (proj.updates.length > 10) msg += `  ... 还有 ${proj.updates.length - 10} 条\n`;
     msg += '\n';

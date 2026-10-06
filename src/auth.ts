@@ -221,9 +221,11 @@ export async function authAny(c: AppContext): Promise<Response | null> {
   const presented = bearer || key;
   const dashPwd = c.env.DASHBOARD_PASSWORD;
 
-  // 1. 主 Token / 数据库 Token（先验，避免合法 Token 被误计为口令失败）
-  const denied = await authenticate(c, true);
-  if (!denied) return null;
+  // 1. 主 Token / 数据库 Token（仅当提供了 Bearer 时才验，避免仪表盘密码用户被误记 token 失败）
+  if (bearer) {
+    const denied = await authenticate(c, true);
+    if (!denied) return null;
+  }
 
   // 2. 仪表盘密码（只给读权限；单独限速）
   if (presented && dashPwd) {
@@ -237,5 +239,5 @@ export async function authAny(c: AppContext): Promise<Response | null> {
     }
     await recordAuthFailure(c.env, dashKey);
   }
-  return denied;
+  return c.json({ error: '未授权：请通过 Authorization header 提供 Token 或仪表盘密码' }, 401);
 }
