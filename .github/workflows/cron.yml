@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: '0 3 * * *'   # UTC 03:00 = 北京时间 11:00 — 健康度刷新 + 日志清理
     - cron: '0 12 * * *'  # UTC 12:00 = 北京时间 20:00 — 每日汇总推送
+    - cron: '0 12 * * 5'  # UTC 12:00 周五 = 北京时间 20:00 周五 — 每周汇总推送
   workflow_dispatch:
 
 jobs:
@@ -23,7 +24,19 @@ jobs:
             echo "请先设置仓库 Secret CRON_SECRET"
             exit 1
           fi
-          curl -sf -X POST \
-            -H "Authorization: Bearer $CRON_SECRET" \
-            -H "Content-Type: application/json" \
-            "${WORKER_URL%/}/api/cron/trigger" || exit 1
+          # 判断是否为周五（UTC 12:00 对应北京时间 20:00）
+          DOW=$(TZ='Asia/Shanghai' date +%u)
+          if [ "$DOW" = "5" ]; then
+            echo "周五触发周报推送"
+            curl -sf -X POST \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "Content-Type: application/json" \
+              -d '{"type":"weekly"}' \
+              "${WORKER_URL%/}/api/cron/trigger" || exit 1
+          else
+            echo "非周五，触发日报推送"
+            curl -sf -X POST \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              -H "Content-Type: application/json" \
+              "${WORKER_URL%/}/api/cron/trigger" || exit 1
+          fi

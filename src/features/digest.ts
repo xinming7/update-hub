@@ -115,6 +115,119 @@ export function formatDigestText(digest: DailyDigest): string {
   return msg;
 }
 
+// ─────────── 每周汇总 ───────────
+
+/** 构建过去 7 天的周报数据（北京时间起算） */
+export async function buildWeeklyDigest(env: Env): Promise<DailyDigest> {
+  const now = new Date();
+  const bjDateStr = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
+  const sinceMs = Date.parse(bjDateStr + 'T00:00:00Z') - 8 * 3600000 - 7 * 86400000;
+  const since = new Date(sinceMs).toISOString().replace('T', ' ').slice(0, 19);
+
+  const rows = await env.DB.prepare(
+    `SELECT u.*, p.name AS project_name, p.icon AS project_icon, p.label AS project_label
+     FROM updates u JOIN projects p ON u.project_id = p.id
+     WHERE u.created_at >= ?
+     ORDER BY u.created_at DESC`
+  ).bind(since).all<DigestRow>();
+
+  const updates = rows.results;
+  const grouped: Record<string, { label: string; icon: string; items: DigestUpdate[] }> = {};
+  for (const u of updates) {
+    if (!grouped[u.project_name]) {
+      grouped[u.project_name] = { label: u.project_label, icon: u.project_icon, items: [] };
+    }
+    grouped[u.project_name].items.push({
+      title: u.title, version: u.version, status: u.status, body: u.body,
+      diff_url: u.diff_url, created_at: u.created_at,
+    });
+  }
+
+  const endStr = bjDateStr;
+  const startStr = new Date(sinceMs).toISOString().slice(0, 10);
+
+  return {
+    date: `${startStr} ~ ${endStr}`,
+    since,
+    total: updates.length,
+    stats: {
+      changed: updates.filter(u => u.status === 'changed').length,
+      errors: updates.filter(u => u.status === 'error' || u.status === 'warning').length,
+      ok: updates.filter(u => u.status === 'ok').length,
+    },
+    projects: Object.entries(grouped).map(([name, g]) => ({
+      name, label: g.label, icon: g.icon, count: g.items.length, updates: g.items,
+    })),
+  };
+}
+
+export function formatWeeklyDigestText(digest: DailyDigest): string {
+  let msg = `📋 <b>Update Hub 周报</b>\n\n`;
+  msg += `📅 ${digest.date}\n`;
+  msg += `📊 共 <b>${digest.total}</b> 条更新`;
+  const parts: string[] = [];
+  if (digest.stats.changed) parts.push(`🔵 ${digest.stats.changed} 变更`);
+  if (digest.stats.errors) parts.push(`🔴 ${digest.stats.errors} 异常`);
+  if (digest.stats.ok) parts.push(`🟢 ${digest.stats.ok} 正常`);
+  if (parts.length) msg += ` · ${parts.join(' · ')}`;
+  msg += '\n\n';
+
+  for (const proj of digest.projects) {
+    msg += `${escapeHtml(proj.icon)} <b>${escapeHtml(proj.label)}</b> (${proj.count} 条)\n`;
+    for (const u of proj.updates.slice(0, 10)) {
+      msg += `${STATUS_ICON[u.status] || '🟢'} ${escapeHtml(u.title || u.version || '(无标题)')}`;
+      if (u.version) msg += ` <code>${escapeHtml(u.version)}</code>`;
+      msg += '\n';
+    }
+    if (proj.updates.length > 10) msg += `  ... 还有 ${proj.updates.length - 10} 条\n`;
+    msg += '\n';
+  }
+
+  msg += `#每周汇总 #UpdateHub #更新同步平台`;
+  return msg;
+}
+
+/** Telegram 每周汇总推送 */
+export async function sendTelegramWeeklyDigest(env: Env): Promise<void> {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+
+  const digest = await buildWeeklyDigest(env);
+  if (!digest.total) {
+    console.log('Telegram weekly digest: no updates this week, skip.');
+    return;
+  }
+
+  let text = formatWeeklyDigestText(digest);
+  const MAX_LEN = 4096;
+  if (text.length > MAX_LEN) {
+    const lines = text.split('\n');
+    let truncated = '';
+    for (const line of lines) {
+      if ((truncated + line + 1).length > MAX_LEN - 30) break;
+      truncated += (truncated ? '\n' : '') + line;
+    }
+    text = truncated + '\n\n... (内容过长已截断)';
+  }
+
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const result = await res.json().catch(() => ({})) as { ok?: boolean; description?: string };
+  if (!result.ok) {
+    throw new Error(`Telegram weekly digest failed: ${res.status} ${result.description || ''}`);
+  }
+}
+
 /**
  * Telegram 每日汇总推送（可选功能）。
  * 需要配置 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID，否则静默跳过。

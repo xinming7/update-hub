@@ -13,7 +13,7 @@ import { triggerWebhooks, validateWebhookUrl, validateWebhookEvents } from './fe
 import { logApiUsage, getUsageStats } from './features/usage';
 import { notifySubscribers, createSubscription, unsubscribeByToken, isValidEmail } from './features/subscriptions';
 import { calculateHealthScore, refreshAllHealthScores, cleanupOldData } from './features/health';
-import { buildDailyDigest, sendTelegramDigest } from './features/digest';
+import { buildDailyDigest, sendTelegramDigest, sendTelegramWeeklyDigest } from './features/digest';
 
 const VALID_STATUSES = new Set(['ok', 'changed', 'error', 'warning']);
 const VALID_TYPES = new Set(['generic', 'version', 'content', 'status']);
@@ -609,11 +609,18 @@ app.post('/api/cron/trigger', async (c) => {
   if (!bearer || bearer !== c.env.CRON_SECRET) {
     return c.json({ error: 'Unauthorized' }, 401);
   }
+  // type=daily（默认）或 type=weekly
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const type = typeof body.type === 'string' ? body.type : 'daily';
   // 执行与 scheduled handler 相同的逻辑
   await refreshAllHealthScores(c.env);
   await cleanupOldData(c.env);
-  await sendTelegramDigest(c.env);
-  return c.json({ ok: true, triggered_at: new Date().toISOString() });
+  if (type === 'weekly') {
+    await sendTelegramWeeklyDigest(c.env);
+  } else {
+    await sendTelegramDigest(c.env);
+  }
+  return c.json({ ok: true, type, triggered_at: new Date().toISOString() });
 });
 
 // 导出 worker：fetch + 定时清理任务
