@@ -101,7 +101,7 @@ export function formatDigestText(digest: DailyDigest): string {
   for (const proj of digest.projects) {
     msg += `${escapeHtml(proj.icon)} <b>${escapeHtml(proj.label)}</b> (${proj.count} 条)\n`;
     for (const u of proj.updates.slice(0, 5)) {
-      msg += `  ${STATUS_ICON[u.status] || '🟢'} ${escapeHtml(u.title || u.version || '(无标题)')}`;
+      msg += `${STATUS_ICON[u.status] || '🟢'} ${escapeHtml(u.title || u.version || '(无标题)')}`;
       if (u.version) msg += ` <code>${escapeHtml(u.version)}</code>`;
       msg += '\n';
       const link = u.diff_url ? safeLink(u.diff_url) : '';
