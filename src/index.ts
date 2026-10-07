@@ -472,6 +472,39 @@ app.delete('/api/webhooks/:id', authWrite, async (c) => {
   return c.json({ deleted: true });
 });
 
+app.patch('/api/webhooks/:id', authWrite, async (c) => {
+  const { data: body, error } = await safeJson<{ url?: string; secret?: string; events?: string[]; enabled?: boolean }>(c);
+  if (error) return c.json({ error }, 400);
+
+  const id = parseId(c.req.param('id'));
+  if (id === null) return c.json({ error: 'id 无效' }, 400);
+
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (body!.url !== undefined) {
+    const url = validateWebhookUrl(body!.url);
+    if (!url) return c.json({ error: 'url 无效：仅支持 http/https，且不允许内网地址' }, 400);
+    sets.push('url = ?'); vals.push(url);
+  }
+  if (body!.secret !== undefined) {
+    sets.push('secret = ?'); vals.push(typeof body!.secret === 'string' ? body!.secret.slice(0, 128) : '');
+  }
+  if (body!.events !== undefined) {
+    const events = validateWebhookEvents(body!.events);
+    if (!events) return c.json({ error: 'events 无效：应为 1~10 个小写事件名组成的数组' }, 400);
+    sets.push('events = ?'); vals.push(JSON.stringify(events));
+  }
+  if (body!.enabled !== undefined) {
+    sets.push('enabled = ?'); vals.push(body!.enabled ? 1 : 0);
+  }
+
+  if (!sets.length) return c.json({ error: '没有需要更新的字段' }, 400);
+  vals.push(id);
+  const res = await c.env.DB.prepare(`UPDATE webhooks SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  if (!res.meta.changes) return c.json({ error: 'Webhook 不存在' }, 404);
+  return c.json({ updated: true });
+});
+
 // ─────────── 订阅管理 ───────────
 
 app.get('/api/subscriptions', authRead, async (c) => {
@@ -611,7 +644,7 @@ app.post('/api/cron/trigger', async (c) => {
   }
   // type=daily（默认）或 type=weekly
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const type = typeof body.type === 'string' ? body.type : 'daily';
+  const type = body.type === 'weekly' ? 'weekly' : 'daily';
   // 执行与 scheduled handler 相同的逻辑
   await refreshAllHealthScores(c.env);
   await cleanupOldData(c.env);
