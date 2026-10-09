@@ -29,14 +29,14 @@ export interface DailyDigest {
 }
 
 /**
- * 构建每日汇总（北京时间 0 点起算）。
+ * 构建汇总数据（北京时间 0 点起算）。
  * created_at 存的是 UTC；北京时间（UTC+8）当天 0 点 = 对应 UTC 时刻 - 8 小时。
- * 供 /api/daily-digest 与 scheduled 定时推送复用。
+ * days=1 为日报，days=7 为周报。
  */
-export async function buildDailyDigest(env: Env): Promise<DailyDigest> {
+async function buildDigest(env: Env, days: number): Promise<DailyDigest> {
   const now = new Date();
   const bjDateStr = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
-  const sinceMs = Date.parse(bjDateStr + 'T00:00:00Z') - 8 * 3600000;
+  const sinceMs = Date.parse(bjDateStr + 'T00:00:00Z') - 8 * 3600000 - (days - 1) * 86400000;
   const since = new Date(sinceMs).toISOString().replace('T', ' ').slice(0, 19);
 
   const rows = await env.DB.prepare(
@@ -58,8 +58,11 @@ export async function buildDailyDigest(env: Env): Promise<DailyDigest> {
     });
   }
 
+  const startStr = new Date(sinceMs).toISOString().slice(0, 10);
+  const dateLabel = days === 1 ? bjDateStr : `${startStr} ~ ${bjDateStr}`;
+
   return {
-    date: bjDateStr,
+    date: dateLabel,
     since,
     total: updates.length,
     stats: {
@@ -71,6 +74,14 @@ export async function buildDailyDigest(env: Env): Promise<DailyDigest> {
       name, label: g.label, icon: g.icon, count: g.items.length, updates: g.items,
     })),
   };
+}
+
+export function buildDailyDigest(env: Env): Promise<DailyDigest> {
+  return buildDigest(env, 1);
+}
+
+export function buildWeeklyDigest(env: Env): Promise<DailyDigest> {
+  return buildDigest(env, 7);
 }
 
 const STATUS_ICON: Record<string, string> = {
@@ -113,52 +124,6 @@ export function formatDigestText(digest: DailyDigest): string {
 
   msg += `#每日汇总 #UpdateHub #更新同步平台`;
   return msg;
-}
-
-// ─────────── 每周汇总 ───────────
-
-/** 构建过去 7 天的周报数据（北京时间起算） */
-export async function buildWeeklyDigest(env: Env): Promise<DailyDigest> {
-  const now = new Date();
-  const bjDateStr = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10);
-  const sinceMs = Date.parse(bjDateStr + 'T00:00:00Z') - 8 * 3600000 - 7 * 86400000;
-  const since = new Date(sinceMs).toISOString().replace('T', ' ').slice(0, 19);
-
-  const rows = await env.DB.prepare(
-    `SELECT u.*, p.name AS project_name, p.icon AS project_icon, p.label AS project_label
-     FROM updates u JOIN projects p ON u.project_id = p.id
-     WHERE u.created_at >= ?
-     ORDER BY u.created_at DESC`
-  ).bind(since).all<DigestRow>();
-
-  const updates = rows.results;
-  const grouped: Record<string, { label: string; icon: string; items: DigestUpdate[] }> = {};
-  for (const u of updates) {
-    if (!grouped[u.project_name]) {
-      grouped[u.project_name] = { label: u.project_label, icon: u.project_icon, items: [] };
-    }
-    grouped[u.project_name].items.push({
-      title: u.title, version: u.version, status: u.status, body: u.body,
-      diff_url: u.diff_url, created_at: u.created_at,
-    });
-  }
-
-  const endStr = bjDateStr;
-  const startStr = new Date(sinceMs).toISOString().slice(0, 10);
-
-  return {
-    date: `${startStr} ~ ${endStr}`,
-    since,
-    total: updates.length,
-    stats: {
-      changed: updates.filter(u => u.status === 'changed').length,
-      errors: updates.filter(u => u.status === 'error' || u.status === 'warning').length,
-      ok: updates.filter(u => u.status === 'ok').length,
-    },
-    projects: Object.entries(grouped).map(([name, g]) => ({
-      name, label: g.label, icon: g.icon, count: g.items.length, updates: g.items,
-    })),
-  };
 }
 
 export function formatWeeklyDigestText(digest: DailyDigest): string {

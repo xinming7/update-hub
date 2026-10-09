@@ -239,8 +239,8 @@ export async function authAny(c: AppContext): Promise<Response | null> {
     }
     await recordAuthFailure(c.env, dashKey);
   }
-  // 无 Bearer 也无密码时，也记一次失败（防无限尝试）
-  if (!bearer && !key) {
+  // 无凭证时：仅当配置了仪表盘密码才记失败（未配置密码时匿名访问合法，不应限速）
+  if (!bearer && !key && dashPwd) {
     await recordAuthFailure(c.env, clientKey(c, 'dashpwd'));
   }
   return c.json({ error: '未授权：请通过 Authorization header 提供 Token 或仪表盘密码' }, 401);

@@ -105,6 +105,3 @@ export async function cleanupOldData(env: Env) {
     env.DB.prepare("DELETE FROM project_tag_relations WHERE tag_id NOT IN (SELECT id FROM project_tags)"),
   ]);
 }
-
-/** 兼容旧名 */
-export const cleanupOldLogs = cleanupOldData;
