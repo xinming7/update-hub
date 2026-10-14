@@ -239,9 +239,7 @@ export async function authAny(c: AppContext): Promise<Response | null> {
     }
     await recordAuthFailure(c.env, dashKey);
   }
-  // 无凭证时：仅当配置了仪表盘密码才记失败（未配置密码时匿名访问合法，不应限速）
-  if (!bearer && !key && dashPwd) {
-    await recordAuthFailure(c.env, clientKey(c, 'dashpwd'));
-  }
+  // 无凭证时不计失败：否则同一 IP（NAT / 公司出口）上任何人刷 5 次空请求，
+  // 就能把持正确密码的合法访问者一起锁在 429 外面。限速只针对「尝试了凭据且错了」。
   return c.json({ error: '未授权：请通过 Authorization header 提供 Token 或仪表盘密码' }, 401);
 }

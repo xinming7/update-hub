@@ -1,5 +1,6 @@
 import type { Env } from '../types';
 import { escapeHtml } from './email';
+import { truncateTelegramHtml } from './telegram-text';
 
 interface DigestUpdate {
   title: string | null;
@@ -166,17 +167,7 @@ export async function sendTelegramWeeklyDigest(env: Env): Promise<void> {
     return;
   }
 
-  let text = formatWeeklyDigestText(digest);
-  const MAX_LEN = 4096;
-  if (text.length > MAX_LEN) {
-    const lines = text.split('\n');
-    let truncated = '';
-    for (const line of lines) {
-      if ((truncated + line + 1).length > MAX_LEN - 30) break;
-      truncated += (truncated ? '\n' : '') + line;
-    }
-    text = truncated + '\n\n... (内容过长已截断)';
-  }
+  const text = truncateTelegramHtml(formatWeeklyDigestText(digest));
 
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
@@ -195,8 +186,7 @@ export async function sendTelegramWeeklyDigest(env: Env): Promise<void> {
   }
 }
 
-/**
- * Telegram 每日汇总推送（可选功能）。
+/** Telegram 每日汇总推送（可选功能）。
  * 需要配置 TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID，否则静默跳过。
  * 若同时启用了 apple-update-checker 的 daily-digest 工作流，请二选一，避免重复推送。
  */
@@ -211,19 +201,7 @@ export async function sendTelegramDigest(env: Env): Promise<void> {
     return;
   }
 
-  // Telegram 单条消息上限 4096，按行截断保证 HTML 标签完整
-  let text = formatDigestText(digest);
-  const MAX_LEN = 4096;
-  if (text.length > MAX_LEN) {
-    const lines = text.split('\n');
-    let truncated = '';
-    for (const line of lines) {
-      // +1 for the newline that join will add
-      if ((truncated + line + 1).length > MAX_LEN - 30) break;
-      truncated += (truncated ? '\n' : '') + line;
-    }
-    text = truncated + '\n\n... (内容过长已截断)';
-  }
+  const text = truncateTelegramHtml(formatDigestText(digest));
 
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',

@@ -61,7 +61,7 @@ export async function getProjectFeed(c: FeedCtx) {
 
   const baseUrl = new URL(c.req.url).origin;
   const feedUrl = `${baseUrl}/api/projects/${encodeURIComponent(name)}/feed`;
-  const xml = generateAtomFeed(`${project.icon} ${project.label}`, feedUrl, feedUrl, items);
+  const xml = generateAtomFeed(`${project.icon} ${project.label}`, baseUrl, feedUrl, items);
 
   return new Response(xml, {
     headers: { 'Content-Type': 'application/atom+xml; charset=utf-8' },
@@ -86,7 +86,7 @@ export async function getGlobalFeed(c: FeedCtx) {
 
   const baseUrl = new URL(c.req.url).origin;
   const feedUrl = `${baseUrl}/api/feed`;
-  const xml = generateAtomFeed('Update Hub', feedUrl, feedUrl, items);
+  const xml = generateAtomFeed('Update Hub', baseUrl, feedUrl, items);
 
   return new Response(xml, {
     headers: { 'Content-Type': 'application/atom+xml; charset=utf-8' },
