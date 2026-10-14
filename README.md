@@ -43,7 +43,7 @@
 wrangler d1 create update-hub-db     # 记下输出的 database_id
 ```
 
-把 `database_id` 填入 `wrangler.toml`（公开仓库建议用占位符，真实值放本地/私有配置）。
+把 `database_id` 填入 `wrangler.toml`（本仓库 2026-10 起直接填真实值并提交）。
 
 ### 2. 初始化数据库
 
@@ -97,8 +97,14 @@ wrangler secret put DASHBOARD_PASSWORD
 
 ### 5. 定时任务
 
-`wrangler.toml` 里配置了 cron（每天 03:00 UTC）自动刷新健康度、清理过期日志与去重键。
-不需要可在部署时去掉 `[triggers]` 段。
+定时任务由 **GitHub Actions** 驱动，不用 Cloudflare cron。`.github/workflows/cron.yml` 按
+`'0 3 * * *'`（北京 11:00 健康度刷新 + 日志清理）、`'0 12 * * *'`（北京 20:00 每日汇总）、
+`'0 12 * * 5'`（周五周报）触发，POST `${WORKER_URL}/api/cron/trigger` 并带 `Bearer CRON_SECRET`。
+
+需要设置仓库变量 `WORKER_URL` 与仓库 secret `CRON_SECRET`，任一为空则该工作流立即失败。
+
+Worker 只导出 `fetch`、没有 `scheduled` handler，所以 `wrangler.toml` 里**不要**加 `[triggers]`——
+那既是死配置（触发后什么都不做），又会占账号的 Cloudflare cron 配额导致 deploy 报 `code: 10072`。
 
 ## 安全设计
 
@@ -322,11 +328,12 @@ fi
 
 ```bash
 npm run typecheck     # TypeScript 检查
+npm run test:unit     # 单元测试（SSRF/限速/RSS/Telegram 截断，无需 dev server）
 npm run test:smoke    # 冒烟测试（需先启动 dev server）
 ```
 
 CI（`.github/workflows/ci.yml`）会在每次 push/PR 时执行：类型检查 → 建表 → 启动 dev server →
-49 项冒烟测试（含防提权、XSS、SSRF、鉴权边界、去重、分页）→ 迁移脚本校验。
+55 项冒烟测试（含防提权、XSS、SSRF、鉴权边界、去重、分页）→ 迁移脚本校验。
 
 ## 免费额度
 

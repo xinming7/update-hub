@@ -18,11 +18,9 @@ compatibility_date = "2025-04-01"
 # 公网部署请务必 `wrangler secret put DASHBOARD_PASSWORD`，并为上报方签发
 # 最小权限 Token（Token 管理端点需要 admin scope）。
 
-# 定时任务：
-#   03:00 UTC  刷新健康度、清理过期日志与去重键
-#   12:00 UTC（北京时间 20:00）每日汇总推送（需配置 TELEGRAM_* 才生效）
-[triggers]
-crons = ["0 3 * * *", "0 12 * * *"]
+# 定时任务不用 Cloudflare cron：src/index.ts 只导出 fetch，没有 scheduled handler。
+# 真正的定时来自 .github/workflows/cron.yml（GitHub Actions）→ POST /api/cron/trigger。
+# 这里曾声明过 [triggers] crons，是死配置，且占账号 cron 配额导致 deploy 报错，已删除。
 
 # database_id 为线上真实值（2026-10 起改为明文提交，见项目约定）。
 # 该 ID 不是密钥，无法凭它访问数据；但它是账号内资源标识，如需重新脱敏请改回占位符。
