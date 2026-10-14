@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 const src = readFileSync('/Users/liujiaming/Ai/project/update-hub/src/html/dashboard.ts', 'utf8');
 
 // 与 dashboard.ts 内联实现保持一致的两段纯逻辑（改动时必须同步）
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 const totalPagesOf = n => Math.max(1, Math.ceil(n / PAGE_SIZE));
 function clampPage(p, total) {
   if (p > total) return total;
@@ -26,10 +26,10 @@ function sliceOf(arr, page) {
 // 1. 总页数
 assert.equal(totalPagesOf(0), 1, '空列表应为 1 页而非 0 页');
 assert.equal(totalPagesOf(1), 1);
-assert.equal(totalPagesOf(20), 1);
-assert.equal(totalPagesOf(21), 2, '21 条应分 2 页');
-assert.equal(totalPagesOf(55), 3, '55 条应分 3 页');
-assert.equal(totalPagesOf(400), 20);
+assert.equal(totalPagesOf(10), 1);
+assert.equal(totalPagesOf(11), 2, '11 条应分 2 页');
+assert.equal(totalPagesOf(55), 6, '55 条应分 6 页');
+assert.equal(totalPagesOf(400), 40);
 
 // 2. 页码夹紧（筛选后页码越界的场景）
 assert.equal(clampPage(5, 3), 3, '页码超过总页数应夹到末页');
@@ -39,12 +39,13 @@ assert.equal(clampPage(2, 3), 2);
 
 // 3. 切片：不重不漏、末页不越界
 const data = Array.from({ length: 55 }, (_, i) => i);
-const p1 = sliceOf(data, 1), p2 = sliceOf(data, 2), p3 = sliceOf(data, 3);
-assert.equal(p1.length, 20);
-assert.equal(p2.length, 20);
-assert.equal(p3.length, 15, '末页应为剩余 15 条');
-assert.deepEqual([...p1, ...p2, ...p3], data, '三页拼回应等于原数组，不重不漏');
-assert.equal(sliceOf(data, 99).length, 15, '越界页码夹到末页，不应返回空');
+const p1 = sliceOf(data, 1), p2 = sliceOf(data, 2);
+assert.equal(p1.length, 10);
+assert.equal(p2.length, 10);
+const pages = Array.from({ length: totalPagesOf(55) }, (_, i) => sliceOf(data, i + 1));
+assert.equal(pages[5].length, 5, '末页应为剩余 5 条');
+assert.deepEqual(pages.flat(), data, '六页拼回应等于原数组，不重不漏');
+assert.equal(sliceOf(data, 99).length, 5, '越界页码夹到末页，不应返回空');
 assert.equal(sliceOf([], 1).length, 0, '空数据不应抛错');
 assert.equal(sliceOf([1, 2, 3], 1).length, 3);
 
@@ -55,7 +56,7 @@ assert.deepEqual(windowOf(5, 10), [1, 4, 5, 6, 10]);
 assert.deepEqual(windowOf(10, 10), [1, 9, 10]);
 assert.deepEqual(windowOf(1, 1), [1], '只有一页时不产生重复');
 assert.deepEqual(windowOf(2, 2), [1, 2]);
-for (const t of [1, 2, 3, 7, 20]) {
+for (const t of [1, 2, 3, 7, 40]) {
   for (let p = 1; p <= t; p++) {
     const w = windowOf(p, t);
     assert.ok(w.every(n => n >= 1 && n <= t), `窗口越界: page=${p} total=${t}`);
@@ -65,7 +66,7 @@ for (const t of [1, 2, 3, 7, 20]) {
 }
 
 // 5. 源码一致性：内联实现必须仍是这些常量与分支
-assert.ok(/const PAGE_SIZE = 20/.test(src), '源码 PAGE_SIZE 已变，本条测试需同步');
+assert.ok(/const PAGE_SIZE = 10/.test(src), '源码 PAGE_SIZE 已变，本条测试需同步');
 assert.ok(/currentPage > totalPages/.test(src), '源码缺页码上限夹紧');
 assert.ok(/currentPage < 1/.test(src), '源码缺页码下限夹紧');
 assert.ok(/new Set\(\[1, totalPages, currentPage, currentPage - 1, currentPage \+ 1\]\)/.test(src),

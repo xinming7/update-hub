@@ -151,6 +151,9 @@ a:hover { text-decoration: underline; }
 .main {
   padding: 0 32px 48px; display: grid;
   grid-template-columns: 1fr 1fr; gap: 24px;
+  /* 两栏各自按内容高度（顶部对齐）。曾试过 stretch 强行等高，但 10 条记录约 840px、
+     趋势图只需约 200px，把图表拉高会让柱子纵向变形，留白补不成内容，故放弃等高。 */
+  align-items: start;
 }
 /* 检测项目横跨整行，其下「最近更新 + 趋势图」两列并排 */
 .section-full { grid-column: 1 / -1; }
@@ -166,8 +169,10 @@ a:hover { text-decoration: underline; }
 #projects .project-meta { text-align: left; margin-left: 0; margin-top: 8px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 #projects .project-info { width: 100%; }
 #projects .project-time { margin-top: 0; }
-/* 项目列表网格：auto-fill 让宽屏一行多列、窄屏自动折行 */
-#projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 16px; }
+/* 项目列表网格：auto-fit 把空轨道折叠，卡片平分整行、右侧不留空。
+   上限列数用「最少 220px」控制——宽屏约 5 列，再宽也不会碎成一行 6~8 个小卡片。
+   ponytail: 列宽下限是拍的，卡片内容（图标+名称）实际只需 ~160px，想更密改这个数即可。 */
+#projects { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; padding: 16px; }
 @media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
 /* 窄屏：32px 侧边距在手机上浪费横向空间，收紧内边距并缩小标题 */
 @media (max-width: 600px) {
@@ -412,7 +417,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 /* ── 数据 ── */
 let allUpdates = [];
 let currentFilter = 'all';
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 let currentPage = 1;
 
 function setFilter(f) {
@@ -652,6 +657,8 @@ function buildPager(totalPages) {
 }
 
 /* ── 30 天趋势图（SVG 柱状图）── */
+/* viewBox 用 600x120 固定比例渲染，容器不参与拉伸：试过 preserveAspectRatio="none"
+   让柱子随栏位拉满，结果柱子被纵向拉成又窄又高，反而更难看。 */
 function renderTrends(daily) {
   const el = document.getElementById('trend-chart');
   if (!daily.length) { el.innerHTML = '<div class="empty">暂无趋势数据</div>'; return; }
