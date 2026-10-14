@@ -152,14 +152,44 @@ a:hover { text-decoration: underline; }
   padding: 0 32px 48px; display: grid;
   grid-template-columns: 1fr 1fr; gap: 24px;
 }
+/* 检测项目横跨整行，其下「最近更新 + 趋势图」两列并排 */
+.section-full { grid-column: 1 / -1; }
+/* 检测项目：卡片网格内的单个项。横向布局下不再用底边框分隔，
+   改为各自成卡片、靠 gap 分隔。 */
+#projects .project-item {
+  flex-direction: column; align-items: flex-start; text-align: left;
+  border-bottom: none; border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 14px 16px; gap: 2px;
+}
+#projects .project-item:last-child { border-bottom: 1px solid var(--border); }
+#projects .project-icon { font-size: 24px; margin-right: 0; margin-bottom: 4px; }
+#projects .project-meta { text-align: left; margin-left: 0; margin-top: 8px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+#projects .project-info { width: 100%; }
+#projects .project-time { margin-top: 0; }
+/* 项目列表网格：auto-fill 让宽屏一行多列、窄屏自动折行 */
+#projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; padding: 16px; }
 @media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
 /* 窄屏：32px 侧边距在手机上浪费横向空间，收紧内边距并缩小标题 */
 @media (max-width: 600px) {
   .header { padding: 16px; }
   .header h1 { font-size: 20px; }
-  .stats-bar { padding: 16px; gap: 12px; }
+  .stats-bar { padding: 16px; gap: 12px; grid-template-columns: repeat(2, 1fr); }
   .main { padding: 0 16px 32px; }
   .stat-card .num { font-size: 26px; }
+  .stat-card { padding: 14px; }
+  /* 单列，项目卡片占满宽度（220px 下限在窄屏仍会留空） */
+  #projects { grid-template-columns: 1fr; padding: 12px; gap: 10px; }
+  .section-head { padding: 12px 14px; font-size: 14px; }
+  .filter-bar { padding: 10px 14px; }
+  .tl-item { padding: 10px 14px; gap: 10px; }
+  .project-item { padding: 12px 14px; }
+  /* 分页条在窄屏会换行，收紧间距与字号 */
+  .pager { padding: 10px 6px; gap: 3px; }
+  .pager-btn { min-width: 26px; height: 26px; padding: 0 6px; font-size: 12px; }
+  .pager-info { width: 100%; text-align: center; margin: 4px 0 0; }
+  .trend-chart { padding: 12px; }
+  .trend-chart svg { height: 100px; }
+  .trend-legend { gap: 10px; font-size: 10px; }
 }
 .section {
   background: var(--bg-card); border: 1px solid var(--border);
@@ -175,6 +205,8 @@ a:hover { text-decoration: underline; }
   padding: 2px 8px; border-radius: 10px; font-weight: 500;
 }
 .section-body { padding: 0; }
+/* #projects 既是 section-body 又是网格容器，覆盖上面的 padding:0 */
+#projects { padding: 16px; }
 .project-item {
   display: flex; align-items: center; padding: 14px 20px;
   border-bottom: 1px solid var(--border); transition: background .15s; cursor: default;
@@ -245,12 +277,22 @@ a:hover { text-decoration: underline; }
   padding: 4px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all .15s;
 }
 .filter-btn:hover, .filter-btn.active { border-color: var(--accent); color: var(--accent-light); background: var(--link-bg); }
-.load-more {
-  display: block; width: 100%; padding: 14px; background: none; border: none;
-  border-top: 1px solid var(--border); color: var(--accent-light); font-size: 13px;
-  cursor: pointer; transition: background .15s;
+/* 分页条 */
+.pager {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 4px; padding: 12px; border-top: 1px solid var(--border);
 }
-.load-more:hover { background: var(--bg-card-hover); }
+.pager-btn {
+  min-width: 30px; height: 30px; padding: 0 8px;
+  background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-dim); font-size: 13px; cursor: pointer;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.pager-btn:hover:not(:disabled):not(.active) { border-color: var(--accent); color: var(--accent-light); }
+.pager-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; cursor: default; font-weight: 600; }
+.pager-btn:disabled { opacity: .4; cursor: not-allowed; }
+.pager-gap { padding: 0 4px; color: var(--text-dim); font-size: 13px; }
+.pager-info { margin-left: 8px; color: var(--text-dim); font-size: 12px; }
 .refresh-btn, .theme-btn {
   background: none; border: 1px solid var(--border); color: var(--text-dim);
   padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px;
@@ -299,13 +341,13 @@ a:hover { text-decoration: underline; }
 </div>
 
 <div class="main">
-  <div class="section" style="grid-column:1">
+  <div class="section section-full">
     <div class="section-head">📦 检测项目 <span class="badge" id="proj-count">0</span></div>
     <div class="section-body" id="projects">
       <div class="loading"><div class="spinner"></div>加载中...</div>
     </div>
   </div>
-  <div class="section" style="grid-column:2">
+  <div class="section">
     <div class="section-head">🕐 最近更新 <span class="badge" id="upd-count">0</span></div>
     <div class="filter-bar" id="filter-bar">
       <button class="filter-btn active" onclick="setFilter('all')">全部</button>
@@ -320,13 +362,12 @@ a:hover { text-decoration: underline; }
       </div>
     </div>
   </div>
-</div>
-
-<div class="section" style="margin:0 32px 24px">
-  <div class="section-head">📊 30 天更新趋势</div>
-  <div class="section-body">
-    <div class="trend-chart" id="trend-chart">
-      <div class="loading"><div class="spinner"></div>加载中...</div>
+  <div class="section">
+    <div class="section-head">📊 30 天更新趋势</div>
+    <div class="section-body">
+      <div class="trend-chart" id="trend-chart">
+        <div class="loading"><div class="spinner"></div>加载中...</div>
+      </div>
     </div>
   </div>
 </div>
@@ -370,15 +411,16 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 
 /* ── 数据 ── */
 let allUpdates = [];
-let displayLimit = 50;
 let currentFilter = 'all';
+const PAGE_SIZE = 20;
+let currentPage = 1;
 
 function setFilter(f) {
   currentFilter = f;
   document.querySelectorAll('.filter-btn').forEach(b => {
     b.classList.toggle('active', b.textContent.includes(f === 'all' ? '全部' : f === 'changed' ? '变更' : f === 'ok' ? '正常' : f === 'error' ? '异常' : '警告'));
   });
-  displayLimit = 50;
+  currentPage = 1;   // 换筛选条件回到第一页
   renderTimeline();
 }
 
@@ -396,7 +438,7 @@ async function loadData() {
     renderStats(data);
     renderProjects(data.projects);
     allUpdates = data.recent_updates || [];
-    displayLimit = 50;
+    currentPage = 1;
     renderTimeline();
     if (trendsRes.ok) {
       const trends = await trendsRes.json();
@@ -424,7 +466,15 @@ function renderStats(data) {
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr + 'Z').getTime();
+  // D1 的 datetime('now') 产出 "YYYY-MM-DD HH:MM:SS"（空格分隔、无时区标记），
+  // 直接 new Date() 在部分引擎上会被当作本地时间，故补 'Z' 视为 UTC。
+  // 但若传入的已是 ISO 串（带 T 或已有 Z，例如经 API 上报写入），补 'Z' 会得到
+  // Invalid Date → 显示 "NaN 天前"。这里只在确实缺少时区信息时才补。
+  const hasTz = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(dateStr);
+  const iso = hasTz ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '';   // 无法解析就不显示相对时间，而不是显示 NaN
+  const diff = Date.now() - t;
   const m = Math.floor(diff / 60000);
   if (m < 1) return '刚刚';
   if (m < 60) return m + ' 分钟前';
@@ -521,12 +571,17 @@ function renderTimeline() {
 
   if (!filtered.length) {
     tlEl.innerHTML = '<div class="empty"><div class="icon">📭</div>暂无更新记录</div>';
-    const oldBtn = wrapEl.querySelector('.load-more');
-    if (oldBtn) oldBtn.remove();
+    const oldPager = wrapEl.querySelector('.pager');
+    if (oldPager) oldPager.remove();
     return;
   }
 
-  const visible = filtered.slice(0, displayLimit);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // 筛选或数据刷新后当前页可能越界，夹回有效范围
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+
+  const visible = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   tlEl.innerHTML = visible.map(u => {
     const safeLink = safeUrl(u.diff_url);
     const linkHtml = safeLink ? '<a class="tl-link" href="' + escapeHtml(safeLink) + '" target="_blank" rel="noopener">🔗 查看</a>' : '';
@@ -546,15 +601,54 @@ function renderTimeline() {
     </div>\`;
   }).join('');
 
-  const oldBtn = wrapEl.querySelector('.load-more');
+  const oldBtn = wrapEl.querySelector('.pager');
   if (oldBtn) oldBtn.remove();
-  if (filtered.length > displayLimit) {
-    const btn = document.createElement('button');
-    btn.className = 'load-more';
-    btn.textContent = '加载更多 (' + (filtered.length - displayLimit) + ' 条剩余)';
-    btn.onclick = () => { displayLimit += 50; renderTimeline(); };
-    wrapEl.appendChild(btn);
+  if (totalPages > 1) wrapEl.appendChild(buildPager(totalPages));
+}
+
+/* 页码分页条：首页/上页、带省略号的页码、下页/末页。
+   页数多时只渲染当前页附近的窗口，避免按钮铺满整行。 */
+function buildPager(totalPages) {
+  const nav = document.createElement('nav');
+  nav.className = 'pager';
+
+  const go = p => { currentPage = p; renderTimeline(); };
+
+  const addBtn = (label, page, opts = {}) => {
+    const b = document.createElement('button');
+    b.className = 'pager-btn' + (opts.active ? ' active' : '');
+    b.textContent = label;
+    b.disabled = !!opts.disabled;
+    if (opts.title) b.title = opts.title;
+    if (!opts.disabled && !opts.active) b.onclick = () => go(page);
+    nav.appendChild(b);
+  };
+
+  addBtn('‹', currentPage - 1, { disabled: currentPage === 1, title: '上一页' });
+
+  // 页码窗口：首尾各保留一页，中间超过 1 页的间隔用省略号
+  const pages = new Set([1, totalPages, currentPage, currentPage - 1, currentPage + 1]);
+  const list = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+  let prev = 0;
+  for (const p of list) {
+    if (prev && p - prev > 1) {
+      const span = document.createElement('span');
+      span.className = 'pager-gap';
+      span.textContent = '…';
+      nav.appendChild(span);
+    }
+    addBtn(String(p), p, { active: p === currentPage });
+    prev = p;
   }
+
+  addBtn('›', currentPage + 1, { disabled: currentPage === totalPages, title: '下一页' });
+
+  const info = document.createElement('span');
+  info.className = 'pager-info';
+  info.textContent = '第 ' + currentPage + ' / ' + totalPages + ' 页';
+  nav.appendChild(info);
+
+  return nav;
 }
 
 /* ── 30 天趋势图（SVG 柱状图）── */
@@ -578,7 +672,8 @@ function renderTrends(daily) {
 
   const W = 600, H = 120, PAD = 30, GAP = 4;
   const barW = Math.max(8, (W - PAD * 2) / last14.length - GAP);
-  const colors = { ok: '#00b894', changed: '#74b9ff', error: '#e17055', warning: '#fdcb6e' };
+  // 走 CSS 变量，随主题自动切换（此前硬编码十六进制，浅色下对比度不足）
+  const colors = { ok: 'var(--green)', changed: 'var(--blue)', error: 'var(--red)', warning: 'var(--orange)' };
 
   let bars = '';
   last14.forEach((day, i) => {
@@ -601,10 +696,10 @@ function renderTrends(daily) {
   el.innerHTML = \`
     <svg viewBox="0 0 \${W} \${H + 10}" preserveAspectRatio="xMidYMid meet">\${bars}</svg>
     <div class="trend-legend">
-      <span><span class="dot" style="background:#00b894"></span>正常</span>
-      <span><span class="dot" style="background:#74b9ff"></span>变更</span>
-      <span><span class="dot" style="background:#fdcb6e"></span>警告</span>
-      <span><span class="dot" style="background:#e17055"></span>异常</span>
+      <span><span class="dot" style="background:var(--green)"></span>正常</span>
+      <span><span class="dot" style="background:var(--blue)"></span>变更</span>
+      <span><span class="dot" style="background:var(--orange)"></span>警告</span>
+      <span><span class="dot" style="background:var(--red)"></span>异常</span>
     </div>\`;
 }
 
