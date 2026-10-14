@@ -23,6 +23,23 @@ export function dashboardHTML(): string {
   --header-from: #1a1d27;
   --header-to: #2d1f4e;
   --link-bg: rgba(108,92,231,.12);
+  /* 语义化软色：原先散落在 .status-badge / .proj-tag 等处的硬编码 rgba 收拢于此 */
+  --accent-soft: rgba(108,92,231,.15);
+  --green-soft: rgba(0,184,148,.15);
+  --blue-soft: rgba(116,185,255,.15);
+  --red-soft: rgba(225,112,85,.15);
+  --red-soft-border: rgba(225,112,85,.3);
+  --red-soft-hover: rgba(225,112,85,.25);
+  --dim-soft: rgba(139,143,163,.15);
+  /* 间距 / 字号 / 圆角 / 阴影 / 动效（此前完全没有体系，全是散落字面量） */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --text-xs: 11px; --text-sm: 12px; --text-base: 14px; --text-lg: 18px;
+  --text-xl: 24px; --text-2xl: 32px;
+  --radius-sm: 6px; --radius-md: 8px; --radius-full: 999px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.4);
+  --ease: cubic-bezier(.4,0,.2,1); --dur: .18s;
 }
 [data-theme="light"] {
   --bg: #f5f6fa;
@@ -40,8 +57,58 @@ export function dashboardHTML(): string {
   --header-from: #ffffff;
   --header-to: #f0ecff;
   --link-bg: rgba(108,92,231,.1);
+  --accent-soft: rgba(108,92,231,.1);
+  --green-soft: rgba(0,168,132,.12);
+  --blue-soft: rgba(9,132,227,.12);
+  --red-soft: rgba(214,48,49,.1);
+  --red-soft-border: rgba(214,48,49,.25);
+  --red-soft-hover: rgba(214,48,49,.18);
+  --dim-soft: rgba(107,112,128,.12);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+}
+/* 现代浏览器：light-dark() 一套值同时覆盖深浅主题。
+   注意：用 @supports 而非直接写，旧浏览器会跳过本块、继续用上面的 [data-theme] 双方案。
+   本块放在 [data-theme="light"] 之后，同优先级下后者胜出——这正是我们要的覆盖顺序。 */
+@supports (color: light-dark(#000, #fff)) {
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#f5f6fa, #0f1117);
+    --bg-card: light-dark(#ffffff, #1a1d27);
+    --bg-card-hover: light-dark(#f0f1f5, #222633);
+    --border: light-dark(#e2e4ea, #2a2e3a);
+    --text: light-dark(#1a1d27, #e4e6eb);
+    --text-dim: light-dark(#6b7080, #8b8fa3);
+    --accent-light: light-dark(#5a4bd1, #a29bfe);
+    --green: light-dark(#00a884, #00b894);
+    --red: light-dark(#d63031, #e17055);
+    --orange: light-dark(#e17055, #fdcb6e);
+    --blue: light-dark(#0984e3, #74b9ff);
+    --header-from: light-dark(#ffffff, #1a1d27);
+    --header-to: light-dark(#f0ecff, #2d1f4e);
+    --link-bg: light-dark(rgba(108,92,231,.1), rgba(108,92,231,.12));
+    --accent-soft: light-dark(rgba(108,92,231,.1), rgba(108,92,231,.15));
+    --green-soft: light-dark(rgba(0,168,132,.12), rgba(0,184,148,.15));
+    --blue-soft: light-dark(rgba(9,132,227,.12), rgba(116,185,255,.15));
+    --red-soft: light-dark(rgba(214,48,49,.1), rgba(225,112,85,.15));
+    --red-soft-border: light-dark(rgba(214,48,49,.25), rgba(225,112,85,.3));
+    --red-soft-hover: light-dark(rgba(214,48,49,.18), rgba(225,112,85,.25));
+    --dim-soft: light-dark(rgba(107,112,128,.12), rgba(139,143,163,.15));
+    --shadow-sm: 0 1px 2px light-dark(rgba(0,0,0,.06), rgba(0,0,0,.3));
+    --shadow-md: 0 4px 12px light-dark(rgba(0,0,0,.08), rgba(0,0,0,.4));
+  }
+  /* light-dark() 按 color-scheme 取值，此时 data-theme 只用来驱动 color-scheme。
+     显式声明三态，保证 auto 跟随系统、dark/light 强制覆盖。 */
+  html[data-theme="light"] { color-scheme: light; }
+  html[data-theme="dark"]  { color-scheme: dark; }
 }
 * { margin:0; padding:0; box-sizing:border-box; }
+/* 无障碍：键盘焦点可见（此前完全没有 focus 样式，Tab 导航无指示） */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+/* 尊重系统「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Noto Sans SC', sans-serif;
   background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6;
@@ -66,11 +133,19 @@ a:hover { text-decoration: underline; }
 .stat-card {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 20px; text-align: center;
+  box-shadow: var(--shadow-sm); transition: box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .stat-card .num {
-  font-size: 32px; font-weight: 800;
+  font-size: 32px; font-weight: 800; line-height: 1.2;
   background: linear-gradient(135deg, var(--accent), var(--blue));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: var(--accent);
+}
+/* 加载中显示的是「-」占位：渐变裁切在单字符上几乎没有可着色像素，会近乎不可见。
+   占位符改用纯色，只有真实数字才走渐变。 */
+.stat-card .num.placeholder {
+  background: none; -webkit-text-fill-color: var(--text-dim); color: var(--text-dim);
 }
 .stat-card .label { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
 .main {
@@ -78,6 +153,14 @@ a:hover { text-decoration: underline; }
   grid-template-columns: 1fr 1fr; gap: 24px;
 }
 @media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+/* 窄屏：32px 侧边距在手机上浪费横向空间，收紧内边距并缩小标题 */
+@media (max-width: 600px) {
+  .header { padding: 16px; }
+  .header h1 { font-size: 20px; }
+  .stats-bar { padding: 16px; gap: 12px; }
+  .main { padding: 0 16px 32px; }
+  .stat-card .num { font-size: 26px; }
+}
 .section {
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius); overflow: hidden;
@@ -130,7 +213,7 @@ a:hover { text-decoration: underline; }
   display: flex; gap: 12px; flex-wrap: wrap;
 }
 .tl-sub .proj-tag {
-  background: rgba(108,92,231,.15); color: var(--accent-light);
+  background: var(--accent-soft); color: var(--accent-light);
   padding: 1px 8px; border-radius: 6px; font-size: 11px;
 }
 .tl-time { font-size: 11px; color: var(--text-dim); white-space: nowrap; margin-top: 3px; flex-shrink: 0; }
@@ -144,18 +227,18 @@ a:hover { text-decoration: underline; }
 .error-state .icon { font-size: 36px; margin-bottom: 8px; }
 .error-state .msg { color: var(--text-dim); font-size: 13px; margin-top: 4px; }
 .error-state .retry-btn {
-  margin-top: 12px; background: rgba(225,112,85,.15); border: 1px solid rgba(225,112,85,.3);
+  margin-top: 12px; background: var(--red-soft); border: 1px solid var(--red-soft-border);
   color: var(--red); padding: 6px 20px; border-radius: 8px; cursor: pointer; font-size: 13px;
 }
-.error-state .retry-btn:hover { background: rgba(225,112,85,.25); }
+.error-state .retry-btn:hover { background: var(--red-soft-hover); }
 .status-badge {
   display: inline-block; font-size: 11px; padding: 1px 8px;
-  border-radius: 6px; font-weight: 500; background: rgba(139,143,163,.15); color: var(--text-dim);
+  border-radius: 6px; font-weight: 500; background: var(--dim-soft); color: var(--text-dim);
 }
-.status-badge.ok { background: rgba(0,184,148,.15); color: var(--green); }
-.status-badge.changed { background: rgba(116,185,255,.15); color: var(--blue); }
-.status-badge.error { background: rgba(225,112,85,.15); color: var(--red); }
-.status-badge.warning { background: rgba(253,203,110,.15); color: var(--orange); }
+.status-badge.ok { background: var(--green-soft); color: var(--green); }
+.status-badge.changed { background: var(--blue-soft); color: var(--blue); }
+.status-badge.error { background: var(--red-soft); color: var(--red); }
+.status-badge.warning { background: var(--red-soft); color: var(--orange); }
 .filter-bar { padding: 12px 20px; display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .filter-btn {
   background: none; border: 1px solid var(--border); color: var(--text-dim);
@@ -209,10 +292,10 @@ a:hover { text-decoration: underline; }
 </div>
 
 <div class="stats-bar" id="stats">
-  <div class="stat-card"><div class="num" id="s-projects">-</div><div class="label">检测项目</div></div>
-  <div class="stat-card"><div class="num" id="s-updates">-</div><div class="label">更新记录</div></div>
-  <div class="stat-card"><div class="num" id="s-changes">-</div><div class="label">变更发现</div></div>
-  <div class="stat-card"><div class="num" id="s-errors">-</div><div class="label">异常告警</div></div>
+  <div class="stat-card"><div class="num placeholder" id="s-projects">-</div><div class="label">检测项目</div></div>
+  <div class="stat-card"><div class="num placeholder" id="s-updates">-</div><div class="label">更新记录</div></div>
+  <div class="stat-card"><div class="num placeholder" id="s-changes">-</div><div class="label">变更发现</div></div>
+  <div class="stat-card"><div class="num placeholder" id="s-errors">-</div><div class="label">异常告警</div></div>
 </div>
 
 <div class="main">
@@ -262,11 +345,14 @@ const THEME_LABELS = { auto: '自动', dark: '深色', light: '浅色' };
 function getTheme() { return localStorage.getItem('uh-theme') || 'auto'; }
 function applyTheme(mode) {
   const html = document.documentElement;
+  // 支持 light-dark() 的浏览器：data-theme 只需声明 color-scheme，取值由浏览器决定。
+  // 不支持的浏览器仍然依赖 [data-theme="light"] 那套硬编码令牌，故 auto 仍要探测系统偏好。
+  const supportsLD = window.CSS && CSS.supports('color', 'light-dark(#000, #fff)');
   if (mode === 'auto') {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    html.setAttribute('data-theme', prefersDark ? '' : 'light');
+    html.setAttribute('data-theme', supportsLD ? 'auto' : (prefersDark ? '' : 'light'));
   } else {
-    html.setAttribute('data-theme', mode === 'light' ? 'light' : '');
+    html.setAttribute('data-theme', supportsLD ? mode : (mode === 'light' ? 'light' : ''));
   }
   const btn = document.getElementById('theme-btn');
   if (btn) btn.textContent = THEME_ICONS[mode] + ' ' + THEME_LABELS[mode];
@@ -326,10 +412,14 @@ async function loadData() {
 function renderStats(data) {
   const p = data.projects || [];
   const u = data.recent_updates || [];
-  document.getElementById('s-projects').textContent = p.length;
-  document.getElementById('s-updates').textContent = u.length;
-  document.getElementById('s-changes').textContent = u.filter(i => i.status === 'changed').length;
-  document.getElementById('s-errors').textContent = u.filter(i => i.status === 'error' || i.status === 'warning').length;
+  const setNum = (id, v) => {
+    const el = document.getElementById(id);
+    el.textContent = v; el.classList.remove('placeholder');
+  };
+  setNum('s-projects', p.length);
+  setNum('s-updates', u.length);
+  setNum('s-changes', u.filter(i => i.status === 'changed').length);
+  setNum('s-errors', u.filter(i => i.status === 'error' || i.status === 'warning').length);
 }
 
 function timeAgo(dateStr) {

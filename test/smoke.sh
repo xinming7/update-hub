@@ -38,7 +38,7 @@ req() { # req <method> <path> <expected_status> [data] [token|-]
   if [ "$got" = "$want" ]; then
     check "$method $path → $want" 1
   else
-    check "$method $path → $want（实际 $got）" 0
+    check "$method $path → ${want}（实际 ${got}）" 0
     echo "     响应: $(head -c 200 "$BODY_FILE")"
   fi
 }
